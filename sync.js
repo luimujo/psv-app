@@ -133,8 +133,8 @@
   function ui(html) {
     var o = $('#cloudUI');
     if (!o) { o = document.createElement('div'); o.id = 'cloudUI'; document.body.appendChild(o); }
-    o.innerHTML = '<div class="cl-wrap"><div class="cl-kopf"><div class="cl-logo">⚽</div><div><b>PSV Wesel-Lackhausen</b><div class="cl-sub">Aufstellung · Cloud</div></div></div>' + html +
-      '<div class="cl-fuss"><a href="#" id="clDs">Datenschutz</a></div></div>';
+    o.innerHTML = '<div class="cl-wrap"><div class="cl-kopf"><img class="cl-logo kk" src="logo.svg" alt=""><div><b>Kaderkompass</b><div class="cl-sub">Kader, Aufstellung &amp; Taktik · Cloud</div></div></div>' + html +
+      '<div class="cl-fuss"><a href="#" id="clDs">Datenschutz</a> · ' + (window.kkCopy ? window.kkCopy() : '© 2026 MLN Consulting · mlnc.net') + '</div></div>';
     o.classList.remove('hidden'); offen = true; document.body.classList.add('cl-offen');
     $('#clDs').addEventListener('click', function (e) { e.preventDefault(); zeigeDatenschutz(); });
     return o;
@@ -711,7 +711,8 @@
       '<p><b>Liga-Tab:</b> lädt die offiziellen Widgets von fussball.de (DFB-Medien); dabei gelten deren Datenschutzhinweise.</p>' +
       '<p><b>Löschen:</b> „Mehr → Cloud &amp; Team → Abmelden und Daten von diesem Gerät entfernen“ löscht die Kopie auf dem Handy. Einzelne Kinder lassen sich im Kader löschen; das wird auch in der Cloud gelöscht. Das ganze Team und Konten kann der Haupttrainer in der Firebase-Konsole löschen.</p>' +
       '<p><b>Wichtig:</b> Ohne Team-Passwort kann niemand – auch nicht der Entwickler – die Daten wiederherstellen.</p>' +
-      '<p class="muted">Eltern sollten über die Nutzung informiert sein und eingewilligt haben (insbesondere bei Fotos).</p>';
+      '<p class="muted">Eltern sollten über die Nutzung informiert sein und eingewilligt haben (insbesondere bei Fotos).</p>' +
+      '<p class="cl-sub">Kaderkompass · ' + (window.kkCopy ? window.kkCopy() : '© 2026 MLN Consulting · mlnc.net') + '</p>';
   }
 
   // ---------- Start ----------
@@ -933,5 +934,6 @@
   window.PSVCloud = { start: start, modus: modus, aktiv: function () { return modus() === 'cloud'; }, entsperrt: function () { return entsperrt; },
     lokalGeaendert: lokalGeaendert, statusInfo: statusInfo, view: view, bind: bind, datenschutzHtml: datenschutzHtml, fehlerText: fehlerText,
     zeigeHochladen: zeigeHochladen, sicherung: sicherung, sicherungenView: sicherungenView, sicherungenBind: sicherungenBind, _sn: { liste: function () { return snListe(); }, laden: snLaden, wiederherstellen: wiederherstellen, aufraeumen: snAufraeumen, taeglich: taeglichPruefen, kette: function () { return snKette; } }, _cloudPruefungZuruecksetzen: function () { cloudOk = false; }, allesUebertragen: allesUebertragen, anfragenAnzahl: function () { return anfragen.length; },
+    teamName: function () { return team && team.name ? team.name : ''; },
     _intern: function () { return { secs: secs, meta: meta, hashes: hashes, lc: lc, team: team, user: user, konflikte: konflikte, inflight: inflight, bereit: bereit, remote: remote }; } };
 })();

@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.4.2';
+  var APP_VERSION = '2.5';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -194,7 +194,7 @@
     var subs = {
       sicherungen: [function () { return CLOUD ? CLOUD.sicherungenView() : ''; }, function () { if (CLOUD) CLOUD.sicherungenBind(); }, 'Sicherungen', function () { return 'Versionsverlauf · verschlüsselt'; }],
       cloud: [function () { return window.PSVCloud ? window.PSVCloud.view() : ''; }, function () { if (window.PSVCloud) window.PSVCloud.bind(); }, 'Cloud & Team', function () { var s = CLOUD ? CLOUD.statusInfo() : null; return s ? (s.icon + ' ' + s.text) : ''; }],
-      datenschutz: [function () { return '<div class="card cl-ds">' + (window.PSVCloud ? window.PSVCloud.datenschutzHtml() : '<h2>Datenschutz</h2><p><b>Wetter:</b> Für „Wetter zur Spielzeit“ werden nur die Platz-Koordinaten an die Bright Sky API (Daten des Deutschen Wetterdienstes) übertragen, die Adresssuche nutzt OpenStreetMap Nominatim – keine Kinderdaten.</p>') + '</div>'; }, function () { }, 'Datenschutz', ''],
+      datenschutz: [function () { return '<div class="card cl-ds">' + (window.PSVCloud ? window.PSVCloud.datenschutzHtml() : '<h2>Datenschutz</h2><p><b>Wetter:</b> Für „Wetter zur Spielzeit“ werden nur die Platz-Koordinaten an die Bright Sky API (Daten des Deutschen Wetterdienstes) übertragen, die Adresssuche nutzt OpenStreetMap Nominatim – keine Kinderdaten.</p>') + '<p class="muted">' + kkCopy() + '</p></div>'; }, function () { }, 'Datenschutz', ''],
       encExp: [viewEncExp, bindEncExp, 'Verschlüsselt exportieren', ''],
       taktik: [viewTaktik, bindTaktik, 'Taktiktafel', tkTitel],
       taktiken: [viewTaktiken, bindTaktiken, 'Taktiktafeln', function () { return T.liste(data).length + ' gespeichert · verschlüsselt synchronisiert'; }],
@@ -226,9 +226,11 @@
     var f = { kader: viewKader, ranking: viewRanking, spieltag: viewSpieltage, liga: viewLiga, aufstellung: viewAufstellung, messungen: viewMessungen, mehr: viewMehr }[state.tab];
     v.innerHTML = f();
     ({ kader: bindKader, ranking: bindRanking, spieltag: bindSpieltage, liga: bindLiga, aufstellung: bindAufstellung, messungen: bindMessungen, mehr: bindMehr })[state.tab]();
-    setTitle('PSV Wesel-Lackhausen', { kader: 'Kader · ' + named().length + ' Kinder', ranking: state.rkMode === 'saison' ? 'Saison-Statistik' : 'Ranking nach Gesamtnote', spieltag: 'Spieltage · ' + data.spieltage.length, messungen: 'Messungen · ' + data.messungen.length + ' Termin' + (data.messungen.length === 1 ? '' : 'e'), aufstellung: st ? M.titel(st) : 'Kein Spieltag', mehr: 'Daten & Einstellungen', liga: 'Liga · D-Junioren Kreisliga B, Gr. 6' }[state.tab]);
+    setTitle('Kaderkompass', { kader: 'Kader · ' + named().length + ' Kinder', ranking: state.rkMode === 'saison' ? 'Saison-Statistik' : 'Ranking nach Gesamtnote', spieltag: 'Spieltage · ' + data.spieltage.length, messungen: 'Messungen · ' + data.messungen.length + ' Termin' + (data.messungen.length === 1 ? '' : 'e'), aufstellung: st ? M.titel(st) : 'Kein Spieltag', mehr: 'Daten & Einstellungen', liga: 'Liga · D-Junioren Kreisliga B, Gr. 6' }[state.tab]);
   }
-  function setTitle(t, s) { $('#title').textContent = t; $('#subtitle').textContent = s || ''; }
+  var TEAM_NAME = 'PSV Wesel-Lackhausen';   // Team-Kontext (Vereinsname bleibt Teamdaten)
+  function teamName() { try { var t = window.PSVCloud && PSVCloud.teamName && PSVCloud.teamName(); return t || TEAM_NAME; } catch (e) { return TEAM_NAME; } }
+  function setTitle(t, s) { $('#title').textContent = t; $('#subtitle').textContent = t === 'Kaderkompass' ? teamName() + (s ? ' · ' + s : '') : (s || ''); }
   function named() { return data.players.map(function (p, i) { return i; }).filter(function (i) { return data.players[i].name && !data.players[i].archiviert; }); }   // aktueller Kader (ohne ehemalige)
   function ehemaligeIn(st) { return M.ehemaligeSpieler(data).filter(function (p) { return M.beteiligt(st, p.id); }).map(function (p) { return p.id; }); }
 
@@ -1106,6 +1108,9 @@
     var b = window.AndroidBridge, url = mapsUrl(o, 'nav');
     if (b && typeof b.navigiere === 'function') b.navigiere(o && isFinite(o.lat) ? (+o.lat).toFixed(5) + ',' + (+o.lon).toFixed(5) : (o && o.adresse) || '', url); else extern(url);
   }
+  function kkCopy() { return '<span class="kk-copy">© 2026 MLN Consulting · <a href="https://mlnc.net" data-extern>mlnc.net</a> · <a href="https://mlnc.net" data-extern>Impressum</a></span>'; }
+  window.kkCopy = kkCopy;
+  document.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a[data-extern]'); if (!a) return; e.preventDefault(); extern(a.getAttribute('href')); }, true);
   function extern(url) { var b = window.AndroidBridge; if (b && typeof b.oeffneExtern === 'function') b.oeffneExtern(url); else window.open(url, '_blank', 'noopener'); }
   function ortLink(o, label) {   // o = {lat, lon, name} oder {adresse}
     if (!o || !(isFinite(o.lat) || o.adresse)) return '';
@@ -1862,7 +1867,8 @@
       '<div class="card"><h2>Datenstand</h2><div class="kv"><div>Quelle</div><div>' + esc(data.quelle || '') + '</div><div>Zuletzt geändert</div><div>' + (data.geaendert ? new Date(data.geaendert).toLocaleString('de-DE') : 'unverändert') + '</div><div>Kinder</div><div>' + named().length + '</div>' +
       '<div>Spieltage</div><div>' + data.spieltage.length + (nAbg ? ' (' + nAbg + ' abgeschlossen)' : '') + '</div><div>Bewertungen</div><div>' + nBew + '</div></div>' +
       '<button class="btn sec" id="tkM">📋 Taktiktafeln</button><button class="btn sec" id="spImpM">SpielerPlus importieren (Zusagen)</button><button class="btn sec" id="fotoImp">Fotos aus Datei übernehmen</button><button class="btn warn" id="reset">Alle Daten leeren (neu beginnen)</button></div>' +
-      '<div class="muted" style="padding:0 4px"><b>PSV Wesel-Lackhausen</b> · Aufstellung · Version ' + APP_VERSION + (CLOUD ? ' · Cloud-Synchronisation verschlüsselt (EU).' : ' · nur auf diesem Gerät gespeichert.') + ' Der Liga-Tab braucht Internet. Änderungen werden nicht in die Excel-Datei übertragen.</div>';
+      '<div class="card kk-info"><img src="logo.svg" alt="" class="kk-logo"><div><b>Kaderkompass</b> · Version ' + APP_VERSION + '<br><span class="muted">Team: ' + esc(teamName()) + '</span><br>' + kkCopy() + '</div></div>' +
+      '<div class="muted" style="padding:0 4px"><b>Kaderkompass</b> · Version ' + APP_VERSION + (CLOUD ? ' · Cloud-Synchronisation verschlüsselt (EU).' : ' · nur auf diesem Gerät gespeichert.') + ' Der Liga-Tab braucht Internet. Änderungen werden nicht in die Excel-Datei übertragen.</div>';
   }
   function sichern(grund) { if (CLOUD && CLOUD.sicherung) CLOUD.sicherung(grund).catch(function (e) { console.warn('Sicherung', e); }); }
   function exportName() { var d = new Date(); return 'PSV_Wesel-Lackhausen_Daten_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.json'; }
@@ -2258,7 +2264,7 @@
     return new Promise(function (res, rej) {
       var img = new Image(), c = document.createElement('canvas'); c.width = B; c.height = H + KOPF;
       img.onload = function () {
-        var x = c.getContext('2d'); x.fillStyle = '#1b5e20'; x.fillRect(0, 0, B, KOPF); x.fillStyle = '#fff'; x.font = 'bold 34px sans-serif'; x.fillText(T.VEREIN + ' · Taktik: ' + b.name, 24, 44);
+        var x = c.getContext('2d'); x.fillStyle = '#1b5e20'; x.fillRect(0, 0, B, KOPF); x.fillStyle = '#fff'; x.font = 'bold 34px sans-serif'; x.fillText(T.VEREIN + ' · Taktik: ' + b.name, 24, 44); x.font = '18px sans-serif'; x.fillStyle = '#c8e6c9'; x.textAlign = 'right'; x.fillText('erstellt mit Kaderkompass · © 2026 MLN Consulting', B - 20, 44); x.textAlign = 'left';
         x.font = '24px sans-serif'; x.fillStyle = '#c8e6c9'; x.fillText(st ? M.titel(st) : (b.gegnerName ? 'gegen ' + b.gegnerName : ''), 24, 76); x.drawImage(img, 0, KOPF, B, H); res(c);
       };
       img.onerror = function () { rej(new Error('Bild konnte nicht erzeugt werden')); };

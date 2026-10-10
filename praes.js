@@ -397,6 +397,7 @@
   }
   function dokument(titel, F) {
     return '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + h(titel) + '</title><style>' + CSS + '</style></head><body>' +
+      '<div class="kkfuss" style="position:fixed;left:10px;bottom:6px;font:11px sans-serif;opacity:.55;z-index:5">erstellt mit Kaderkompass · © 2026 MLN Consulting · mlnc.net</div>' +
       F.map(function (f) { return f.html; }).join('\n') +
       '<div class="tap" id="tapL"></div><div class="tap" id="tapR"></div><div id="ui"><button id="zu" title="Schließen">✕</button><button id="zur" title="Zurück">‹</button><span id="cnt"></span><button id="vor" title="Weiter">›</button><button id="vb" title="Vollbild">⛶</button></div>' +
       '<script>(' + deckScript.toString() + ')();</script></body></html>';
