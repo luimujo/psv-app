@@ -1,7 +1,7 @@
-/* PSV Wesel-Lackhausen Aufstellung – Rechenkern
- * 1:1-Portierung der Formeln aus „Fussball_Spieltagsaufstellung (2).xlsx“ (Stand 08.10.2026):
- * Spielerbögen (G15–G33), Übersicht (M, Ranking), Positionsvorschlag (AI:AS) und
- * das ausgeblendete Blatt „Listen“ (Erstbesetzung, Tauschrunden, Auswechseloptionen).
+/* Kaderkompass – Rechenkern
+ * Aufstellungs-Engine:
+ * Spielerbewertung, Übersicht (Ranking), Positionsvorschlag und
+ * die Berechnung (Erstbesetzung, Tauschrunden, Auswechseloptionen).
  */
 (function (root) {
   'use strict';
@@ -10,7 +10,7 @@
   var PRI = ['TW', 'IV', '6', '8', 'ST', 'LM', 'RM', 'LA', 'RA', 'LV', 'RV', '10'];   // Vergabe-Reihenfolge
   var COLMAP = { LM: 'LA', RM: 'RA' };
   var ZROWS = ['TW', 'IV', 'LV', 'RV', '6', '8', '10', 'LM', 'RM', 'LA', 'RA', 'ST', 'HS'];
-  // Spielfelder: Positionen in Anzeige-Reihenfolge (wie Formation_Visuell) mit Koordinaten (x 0..100 links→rechts, y 0..100 Angriff→Tor)
+  // Spielfelder: Positionen in Anzeige-Reihenfolge mit Koordinaten (x 0..100 links→rechts, y 0..100 Angriff→Tor)
   var PITCHES = [
     { code: '7A', size: '7', name: '7er · 2-3-1', kurz: '2-3-1', slots: [['TW', 50, 92], ['LV', 28, 72], ['RV', 72, 72], ['LM', 16, 40], ['6', 50, 48], ['RM', 84, 40], ['ST', 50, 15]] },
     { code: '7B', size: '7', name: '7er · 2-1-3', kurz: '2-1-3', slots: [['TW', 50, 92], ['IV', 30, 72], ['IV', 70, 72], ['6', 50, 50], ['LA', 16, 22], ['ST', 50, 13], ['RA', 84, 22]] },
@@ -25,7 +25,7 @@
     { code: '9E', size: '9', name: '9er · 4-2-2', kurz: '4-2-2', slots: [['TW', 50, 92], ['LV', 13, 68], ['IV', 37, 76], ['IV', 63, 76], ['RV', 87, 68], ['6', 32, 47], ['8', 68, 47], ['ST', 32, 15], ['ST', 68, 15]] },
     { code: '9F', size: '9', name: '9er · 3-1-3-1', kurz: '3-1-3-1', slots: [['TW', 50, 92], ['LV', 18, 73], ['IV', 50, 77], ['RV', 82, 73], ['6', 50, 57], ['LM', 14, 38], ['10', 50, 33], ['RM', 86, 38], ['ST', 50, 12]] }
   ];
-  // Vorschlags-Paar je Größe: [Abwehr-Formation, Angriffs-Formation] – Standard wie im Excel-Blatt
+  // Vorschlags-Paar je Größe: [Abwehr-Formation, Angriffs-Formation] – Standard
   var STANDARD_PAAR = { '7': ['7A', '7B'], '9': ['9A', '9B'] };
   function pitchByCode(c) { for (var i = 0; i < PITCHES.length; i++) if (PITCHES[i].code === c) return PITCHES[i]; return null; }
   function paarFuer(S, sz) {
@@ -36,7 +36,7 @@
   var STAMM_LABEL = 'Ausdauer über die Spielzeit';
 
   function isNum(x) { return typeof x === 'number' && isFinite(x); }
-  // Excel ROUND (kaufmännisch, mit 15-stelliger Korrektur wie Excel)
+  // Kaufmännisches Runden (mit 15-stelliger Korrektur)
   function xround(x, d) {
     var m = Math.pow(10, d || 0);
     var y = Number((Math.abs(x) * m).toPrecision(15));
@@ -136,7 +136,7 @@
 
   function firstName(n) { n = (n || '').trim(); var i = n.indexOf(' '); return i < 0 ? n : n.slice(0, i); }
 
-  // ---------- Erstbesetzung (Blatt „Listen“) ----------
+  // ---------- Erstbesetzung  ----------
   function lineups(data, evals) {
     var S = data.settings, P = data.players, Z = data.zones || {};
     var bStamm = isNum(S.bonusStamm) ? S.bonusStamm : 0.5, bAlt = isNum(S.bonusAlt) ? S.bonusAlt : 0.25;
@@ -255,7 +255,7 @@
       var pp = PP[pt.code];
       FREE[pt.code] = assign(pp, function (k) { return K[k].P === 1; });
     });
-    // Erstbesetzung nur mit den Kindern einer Gruppe (Spalte „gleiche Kinder“ im Blatt „Listen“) inkl. Reparatur
+    // Erstbesetzung nur mit den Kindern einer Gruppe inkl. Reparatur
     function restrict(pt, partner) {
       var pp = PP[pt.code], n = pp.slots.length;
       var g = assign(pp, function (k) { return partner.indexOf(k + 1) >= 0; });
@@ -298,7 +298,7 @@
       PITCHES.forEach(function (pt) {
         if (pt.size !== sz) return;
         if (pt.code === startCode) RESTR[pt.code] = std ? FREE[pt.code] : auffuellen(PP[pt.code], FREE[pt.code]);
-        else if (pt.code === A) RESTR[pt.code] = std ? RA : auffuellen(PP[A], RA);   // Standard-Paar: exakt wie Excel
+        else if (pt.code === A) RESTR[pt.code] = std ? RA : auffuellen(PP[A], RA);   // Standard-Paar: exakt Standard
         else if (pt.code === B) RESTR[pt.code] = std ? RB : auffuellen(PP[B], RB);
         else RESTR[pt.code] = auffuellen(PP[pt.code], restrict(pt, FREE[startCode]));   // weitere Formation: Lücken mit freien Kindern füllen
       });

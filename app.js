@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.5';
+  var APP_VERSION = '2.5.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -1586,7 +1586,7 @@
       '<p><b>4. Vergabe-Reihenfolge</b> TW, IV, 6, 8, ST, Flügel, LV/RV, 10: jede Position bekommt das passendste freie Kind (Vorrang hat, wer dort im Vergleich zu seinen anderen Positionen am stärksten ist). Danach werden bis zu zweimal zwei Kinder getauscht, wenn das die Eignung erhöht – wer auf seiner Stammposition steht, wird dabei nicht weggetauscht.</p>' +
       '<p><b>5. Pro Größe dieselben Kinder</b> in Abwehr- und Angriffsformation des gewählten Vorschlags-Paars (Standard 7er 2-3-1/2-1-3, 9er 3-4-1/3-2-3; je Spieltag änderbar): Variante 1 startet mit der Abwehr-, Variante 2 mit der Angriffsformation; genommen wird die höhere Gesamteignung (jede leere Position −3). Weitere Formationen derselben Größe werden mit denselben Kindern besetzt; bleibt dort eine Position leer, weil kein Kind der Gruppe sie spielen darf, rückt das passendste freie Kind nach. „–“ = kein erlaubtes Kind frei.</p>' +
       '<p><b>6. Auswechseloptionen</b> nach Gesamtnote; Position = beste erlaubte Position des Kindes, „für“ = Kind, das dort steht.</p>' +
-      '<p class="muted">Gleiche Rechnung wie im Excel-Blatt „Formation_Visuell“ / „Listen“ (Stand 08.10.2026). Jeder offene Spieltag rechnet mit seinen eigenen Zusagen und Vorgaben; „Abschließen“ friert Aufstellung und Auswechseloptionen ein.</p></div>' +
+      '<p class="muted">Automatische Erstbesetzung aus Gesamtnote, Positions- und Zonen-Eignung, Stamm/Alt-Bonus und Ausdauer. Jeder offene Spieltag rechnet mit seinen eigenen Zusagen und Vorgaben; „Abschließen“ friert Aufstellung und Auswechseloptionen ein.</p></div>' +
       '<div class="card info"><h2>Automatische Form</h2><p><b>Spielwert</b> = Mittel der vergebenen Kriterien eines Spiels (Feld: ' + esc(KF) + '; auf TW: ' + esc(KT) + ').</p>' +
       '<p><b>Form</b> = gewichtetes Mittel der letzten bis zu 5 bewerteten Spiele (neuestes zuerst). Gewicht = Aktualität (1 · 0,8 · 0,6 · 0,4 · 0,2) × Minutenfaktor; Minutenfaktor = Minuten ÷ Spielzeit, begrenzt auf 0,25 … 1 (ohne Minutenangabe 1). Gerundet auf eine Nachkommastelle.</p>' +
       '<p>Die automatische Form ersetzt „Spiel 1–3“ im Spielerbogen; „Training“ zählt weiter mit: Kategorie Form = Mittel aus (Form, Form, Form, Training). Ohne Bewertung gilt die manuelle Form.</p>' +
@@ -2419,7 +2419,7 @@
     });
     $('#bS').addEventListener('change', function (e) { data.settings.bonusStamm = parseFloat(e.target.value) || 0; commit(); });
     $('#bA').addEventListener('change', function (e) { data.settings.bonusAlt = parseFloat(e.target.value) || 0; commit(); });
-    $('#zReset').addEventListener('click', function () { if (!confirm('Zonen-Tabelle auf den Stand der Excel-Datei setzen?')) return; data.zones = clone(window.PSV_DEFAULT.zones); data.settings.bonusStamm = window.PSV_DEFAULT.settings.bonusStamm; data.settings.bonusAlt = window.PSV_DEFAULT.settings.bonusAlt; commit(); render(); });
+    $('#zReset').addEventListener('click', function () { if (!confirm('Zonen-Tabelle auf Standardwerte zurücksetzen?')) return; data.zones = clone(window.PSV_DEFAULT.zones); data.settings.bonusStamm = window.PSV_DEFAULT.settings.bonusStamm; data.settings.bonusAlt = window.PSV_DEFAULT.settings.bonusAlt; commit(); render(); });
   }
 
   // ---------- Start ----------
