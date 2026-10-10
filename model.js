@@ -930,7 +930,7 @@
     return '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + h('Spielbericht ' + z.titel) + '</title><style>' +
       'body{font-family:Arial,Helvetica,sans-serif;color:#1d2320;margin:24px;max-width:780px}h1{color:#1B5E20;font-size:22px;margin:0}h2{color:#1B5E20;font-size:16px;border-bottom:2px solid #1B5E20;padding-bottom:3px;margin-top:22px}' +
       '.erg{font-size:40px;font-weight:800;margin:10px 0}.mu{color:#68736c}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid #dfe5df;padding:5px 6px;text-align:left}th{background:#eef2ee}' +
-      '</style></head><body><h1>PSV Wesel-Lackhausen – ' + h(z.gegner) + '</h1><div class="mu">' + h(z.titel) + (z.halbzeit ? ' · 2 × ' + z.halbzeit + ' Min.' : '') + '</div>' +
+      '@page{size:A4 portrait;margin:12mm}@media print{body{margin:0;max-width:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><h1>PSV Wesel-Lackhausen – ' + h(z.gegner) + '</h1><div class="mu">' + h(z.titel) + (z.halbzeit ? ' · 2 × ' + z.halbzeit + ' Min.' : '') + '</div>' +
       '<div class="erg">' + z.tore + ' : ' + z.gegentore + '</div>' +
       '<h2>Spielverlauf</h2>' + (z.ereignisse.length ? tab(['Min.', 'Ereignis'], z.ereignisse.map(function (e) { return [minTxt(e.minute), e.text]; })) : '<p class="mu">Keine Ereignisse.</p>') +
       '<h2>Aufstellung</h2>' + tab(['Position', 'Anpfiff', 'Abpfiff'], se) +
@@ -940,7 +940,7 @@
       (z.notizen.length ? '<h2>Notizen</h2>' + tab(['Min.', 'Notiz'], z.notizen.map(function (n) { return [minTxt(n.minute), n.text]; })) : '') +
       '<h2>Einsatzminuten</h2>' + tab(['Spieler', 'Minuten'], z.minuten.map(function (m) { return [m.name, m.min + ' / ' + z.spielzeit]; })) +
       (st.wetter && st.wetter.text ? '<h2>Wetter</h2><p>' + h(st.wetter.text) + '</p>' : '') +
-      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit Kaderkompass 2.5 · © 2026 MLN Consulting · <a href="https://mlnc.net">mlnc.net</a></p></body></html>';
+      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit Kaderkompass · © 2026 MLN Consulting · <a href="https://mlnc.net">mlnc.net</a></p></body></html>';
   }
   var api = { DATA_VERSION: DATA_VERSION, KRIT_FELD: KRIT_FELD, KRIT_TW: KRIT_TW, FORM_RECENCY: FORM_RECENCY, STANDARD_SPIELZEIT: STANDARD_SPIELZEIT,
     VORSCHLAG_MIN_SPIELE: VORSCHLAG_MIN_SPIELE, VORSCHLAG_SCHWELLE: VORSCHLAG_SCHWELLE,

@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.5.1';
+  var APP_VERSION = '2.5.2';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -38,15 +38,34 @@
   var IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function webDownload(name, blob) {   // iOS: Teilen-Blatt („In Dateien sichern“), sonst Download
     try {
-      if (IOS && navigator.canShare && window.File) { var f = new File([blob], name, { type: blob.type }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: name }).catch(function () { }); return; } }
+      if (IOS && navigator.canShare && window.File) { var f = new File([blob], name, { type: blob.type }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: name }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(name, blob); }); return; } }
     } catch (e) { }
+    webDownloadDirekt(name, blob);
+  }
+  function webDownloadDirekt(name, blob) {
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); URL.revokeObjectURL(a.href); }, 1500);
   }
-  function webDrucken(html) {   // Drucken / „Als PDF sichern“ ohne Pop-up (funktioniert auch als Home-Bildschirm-App)
-    var alt = document.getElementById('druckFrame'); if (alt) alt.remove();
-    var f = document.createElement('iframe'); f.id = 'druckFrame'; f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
-    document.body.appendChild(f); var d = f.contentWindow.document; d.open(); d.write(html); d.close();
-    setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Drucken nicht möglich'); } }, 400);
+  function webDrucken(html, quer) {   // Drucken / „Als PDF sichern“: Dokument im Hauptfenster drucken (Safari/Chrome mobil drucken sonst die App-Seite statt eines iFrames)
+    var alt = document.getElementById('druckHost'); if (alt) alt.remove();
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var css = [].map.call(doc.querySelectorAll('style'), function (x) { return x.textContent; }).join('\n')
+      .replace(/@page\s*\{[^}]*\}/g, '').replace(/(^|[\s{},])(html\s*,\s*body|html|body)(?=\s*[{,.:#\[])/g, '$1.kkb');
+    [].forEach.call(doc.querySelectorAll('script,#ui,.tap'), function (x) { x.remove(); });
+    var sl = doc.querySelectorAll('.slide'); [].forEach.call(sl, function (x, k) { var nr = x.querySelector('.fuss .nr'); if (nr) nr.textContent = (k + 1) + ' / ' + sl.length; });
+    var host = document.createElement('div'); host.id = 'druckHost';
+    var root = host.attachShadow ? host.attachShadow({ mode: 'open' }) : host;
+    root.innerHTML = '<style>' + css + '\n.kkb{display:block;height:auto!important;overflow:visible!important;background:#fff!important}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style><div class="kkb">' + doc.body.innerHTML + '</div>';
+    var ps = document.createElement('style'); ps.id = 'druckSeite';
+    ps.textContent = '#druckHost{display:none}@media print{@page{size:A4 ' + (quer ? 'landscape;margin:0' : 'portrait;margin:12mm') + '}html,body{height:auto!important;overflow:visible!important;background:#fff!important;margin:0!important;padding:0!important}body.druckt>*:not(#druckHost){display:none!important}body.druckt>#druckHost{display:block!important}}';
+    var a = document.getElementById('druckSeite'); if (a) a.remove();
+    document.head.appendChild(ps); document.body.appendChild(host); document.body.classList.add('druckt');
+    var fertig = false;
+    function aufraeumen() { if (fertig) return; fertig = true; document.body.classList.remove('druckt'); host.remove(); ps.remove(); window.removeEventListener('afterprint', aufraeumen); }
+    window.addEventListener('afterprint', aufraeumen);
+    var bilder = [].slice.call(root.querySelectorAll('img')).map(function (im) { return im.decode ? im.decode().catch(function () { }) : null; });
+    Promise.all(bilder).then(function () {
+      setTimeout(function () { try { window.print(); } catch (e) { toast('Drucken nicht möglich'); } setTimeout(aufraeumen, 60000); }, 150);
+    });
   }
   function webTeilenText(titel, txt) {
     if (navigator.share) { navigator.share({ title: titel, text: txt }).catch(function () { }); return; }
@@ -1781,14 +1800,14 @@
     $('#pPdf').addEventListener('click', function () {
       var r = praesErzeugen();
       if (br && br.printHtmlQuer) { br.printHtmlQuer(r.dateiname.replace(/\.html$/, ''), r.html); return; }
-      webDrucken(r.html);
+      webDrucken(r.html, true);
     });
     $('#pHtml').addEventListener('click', function () {
       var r = praesErzeugen();
       if (br && br.saveFileAs) { br.saveFileAs(r.dateiname, r.html, 'text/html'); return; }
       webDownload(r.dateiname, new Blob([r.html], { type: 'text/html' })); toast('„' + r.dateiname + '“ gespeichert');
     });
-    if ($('#pShare')) $('#pShare').addEventListener('click', function () { var r = praesErzeugen(); if (br && br.shareFile) br.shareFile(r.dateiname, r.html, 'text/html'); else webDownload(r.dateiname, new Blob([r.html], { type: 'text/html' })); });
+    if ($('#pShare')) $('#pShare').addEventListener('click', function () { var r = praesErzeugen(); if (br && br.shareFile) { br.shareFile(r.dateiname, r.html, 'text/html'); return; } var bl = new Blob([r.html], { type: 'text/html' }); try { var f = new File([bl], r.dateiname, { type: 'text/html' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: r.titel }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(r.dateiname, bl); }); return; } } catch (e) { } webDownload(r.dateiname, bl); });
     $('#pText').addEventListener('click', function () {
       var r = praesErzeugen();
       if (br && br.shareText) br.shareText(r.titel, r.text);
@@ -2277,7 +2296,7 @@
     if (!teilen && br && br.saveBase64) { br.saveBase64(name, b64, mime); return; }
     var bin = atob(b64), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     var blob = new Blob([u], { type: mime });
-    if (teilen && navigator.canShare) { try { var f = new File([blob], name, { type: mime }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: T.VEREIN + ' – Taktik' }).catch(function () { }); return; } } catch (e) { } }
+    if (teilen && navigator.canShare) { try { var f = new File([blob], name, { type: mime }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: T.VEREIN + ' – Taktik' }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(name, blob); }); return; } } catch (e) { } }
     webDownload(name, blob); toast('„' + name + '“ gespeichert');
   }
   function tkExport(art) {
