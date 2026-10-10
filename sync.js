@@ -703,6 +703,7 @@
   function datenschutzHtml() {
     return '<h2>Datenschutz</h2>' +
       '<p><b>Was wird gespeichert?</b> Kader (Namen, Rückennummern, Positionen, Einschätzungen, Notizen, Fotos), Spieltage, Messungen und Gegnerinfos – also Daten von Kindern. Verantwortlich ist der Verein bzw. die Trainer, die die App nutzen.</p>' +
+      '<p><b>Wetter (ab 2.4):</b> Für „Wetter zur Spielzeit“ fragt die App die Bright Sky API (api.brightsky.dev, Daten des Deutschen Wetterdienstes) ab – übertragen werden nur die Koordinaten des Platzes und der Zeitraum, keine Kinderdaten. Die Adresssuche für Spielorte nutzt OpenStreetMap Nominatim (nur der eingegebene Suchtext). Quelle: Deutscher Wetterdienst; Kartendaten © OpenStreetMap-Mitwirkende (ODbL).</p>' +
       '<p><b>Wo?</b> Auf deinem Handy (App-Speicher) und – wenn du die Cloud nutzt – in Google Firebase (Firestore) im Projekt des Teams, Speicherort Frankfurt (europe-west3, EU).</p>' +
       '<p><b>Verschlüsselt:</b> Alle Teamdaten inkl. Fotos werden auf dem Gerät mit AES-GCM (256 Bit) verschlüsselt, bevor sie hochgeladen werden. Der Schlüssel wird aus dem Team-Passwort abgeleitet (PBKDF2-SHA256, 600 000 Runden) und verlässt das Gerät nie. Google/Firebase und Dritte sehen nur unlesbare Daten. Auch die Kopie auf dem Handy ist im Cloud-Modus verschlüsselt.</p>' +
       '<p><b>Unverschlüsselt in der Cloud</b> liegen nur technische Angaben: Team-Kennung, Benutzerkennungen und E-Mail-Adressen der Trainer (für Anmeldung und Freigabe), Einladungscode, Zeitpunkte der Änderungen, Anzahl/Größe der Datenblöcke.</p>' +

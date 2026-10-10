@@ -907,6 +907,7 @@
     L.push('⚽ PSV Wesel-Lackhausen – ' + z.gegner + (z.ort ? ' (' + z.ort + ')' : ''));
     L.push(fmtDatum(st.datum) + (z.beginn ? ', Anpfiff ' + new Date(z.beginn).toTimeString().slice(0, 5) + ' Uhr' : '') + (z.halbzeit ? ' · 2 × ' + z.halbzeit + ' Min.' : ''));
     L.push('Ergebnis: *' + z.tore + ':' + z.gegentore + '*' + (st.ohneWertung ? ' (ohne Wertung)' : ''));
+    if (st.wetter && st.wetter.text) L.push(st.wetter.text);
     L.push('');
     if (z.scorer.length) { L.push('Tore/Vorlagen: ' + z.scorer.map(function (x) { return x.name + (x.tore ? ' ' + x.tore + ' T' : '') + (x.assists ? ' ' + x.assists + ' V' : ''); }).join(', ')); }
     L.push('Startelf: ' + z.startelf.map(function (x) { return x.pos + ' ' + x.name; }).join(', '));
@@ -938,7 +939,8 @@
       (z.fehler.length ? '<h2>Abwehrfehler</h2>' + tab(['Spieler', 'Anzahl'], z.fehler.map(function (f) { return [f.name, f.n]; })) : '') +
       (z.notizen.length ? '<h2>Notizen</h2>' + tab(['Min.', 'Notiz'], z.notizen.map(function (n) { return [minTxt(n.minute), n.text]; })) : '') +
       '<h2>Einsatzminuten</h2>' + tab(['Spieler', 'Minuten'], z.minuten.map(function (m) { return [m.name, m.min + ' / ' + z.spielzeit]; })) +
-      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.3.1</p></body></html>';
+      (st.wetter && st.wetter.text ? '<h2>Wetter</h2><p>' + h(st.wetter.text) + '</p>' : '') +
+      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.4</p></body></html>';
   }
   var api = { DATA_VERSION: DATA_VERSION, KRIT_FELD: KRIT_FELD, KRIT_TW: KRIT_TW, FORM_RECENCY: FORM_RECENCY, STANDARD_SPIELZEIT: STANDARD_SPIELZEIT,
     VORSCHLAG_MIN_SPIELE: VORSCHLAG_MIN_SPIELE, VORSCHLAG_SCHWELLE: VORSCHLAG_SCHWELLE,

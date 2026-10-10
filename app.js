@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.3.1';
+  var APP_VERSION = '2.4';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -194,7 +194,7 @@
     var subs = {
       sicherungen: [function () { return CLOUD ? CLOUD.sicherungenView() : ''; }, function () { if (CLOUD) CLOUD.sicherungenBind(); }, 'Sicherungen', function () { return 'Versionsverlauf · verschlüsselt'; }],
       cloud: [function () { return window.PSVCloud ? window.PSVCloud.view() : ''; }, function () { if (window.PSVCloud) window.PSVCloud.bind(); }, 'Cloud & Team', function () { var s = CLOUD ? CLOUD.statusInfo() : null; return s ? (s.icon + ' ' + s.text) : ''; }],
-      datenschutz: [function () { return '<div class="card cl-ds">' + (window.PSVCloud ? window.PSVCloud.datenschutzHtml() : '') + '</div>'; }, function () { }, 'Datenschutz', ''],
+      datenschutz: [function () { return '<div class="card cl-ds">' + (window.PSVCloud ? window.PSVCloud.datenschutzHtml() : '<h2>Datenschutz</h2><p><b>Wetter:</b> Für „Wetter zur Spielzeit“ werden nur die Platz-Koordinaten an die Bright Sky API (Daten des Deutschen Wetterdienstes) übertragen, die Adresssuche nutzt OpenStreetMap Nominatim – keine Kinderdaten.</p>') + '</div>'; }, function () { }, 'Datenschutz', ''],
       encExp: [viewEncExp, bindEncExp, 'Verschlüsselt exportieren', ''],
       taktik: [viewTaktik, bindTaktik, 'Taktiktafel', tkTitel],
       taktiken: [viewTaktiken, bindTaktiken, 'Taktiktafeln', function () { return T.liste(data).length + ' gespeichert · verschlüsselt synchronisiert'; }],
@@ -816,7 +816,8 @@
       '<label class="f">Heim / Auswärts</label>' + segHtml('dOrt', st.ort, [['Heim', 'Heim'], ['Auswärts', 'Auswärts']]) +
       '<label class="f">Gegnerstärke (für Form und Vorschläge, mild)</label>' + segHtml('dGs', st.gegnerStaerke || '', [['', 'unbekannt'], ['schwach', 'schwach'], ['mittel', 'mittel'], ['stark', 'stark']], 'small') +
       '<label class="ck"><input type="checkbox" id="dOw"' + (st.ohneWertung ? ' checked' : '') + '> Spiel ohne Wertung (z. B. Freundschaftsspiel) – zählt nicht für Bilanz, Form und Vorschläge</label>' +
-      '<div class="grid2"><div><label class="f">Spielform</label>' + segHtml('dGr', st.groesse, [['', 'offen'], ['7', '7er'], ['9', '9er']], 'small') + '</div><div><label class="f">Spielzeit (Min.)</label><input type="number" id="dZeit" value="' + esc(st.spielzeit) + '"></div></div></div>';
+      '<div class="grid2"><div><label class="f">Spielform</label>' + segHtml('dGr', st.groesse, [['', 'offen'], ['7', '7er'], ['9', '9er']], 'small') + '</div><div><label class="f">Spielzeit (Min.)</label><input type="number" id="dZeit" value="' + esc(st.spielzeit) + '"></div></div>' +
+      '<div class="grid2"><div><label class="f">Anpfiff</label><input type="time" id="dUhr" value="' + esc(st.uhrzeit || '') + '"></div><div><label class="f">Treffen</label><input type="time" id="dTreff" value="' + esc(st.treffen || '') + '"></div></div></div>';
     h += '<div class="card ' + (closed ? 'lockcard' : '') + '"><h2>' + (closed ? '🔒 Abgeschlossen' : 'Status: offen') + '</h2>' +
       (closed ? '<div class="muted">Vorschlag (Aufstellung und Auswechseloptionen) eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) + '. Spätere Notenänderungen ändern ihn nicht.</div><button class="btn sec" id="dOpen">Wieder öffnen</button>'
         : '<div class="muted">Der Vorschlag rechnet live mit den aktuellen Noten und Zusagen. „Abschließen“ friert ihn für diesen Spieltag ein.</div><button class="btn" id="dClose">Spieltag abschließen</button>') +
@@ -824,6 +825,7 @@
       '<button class="btn" id="dLive">' + (!st.live || st.live.phase === 'vor' ? '▶ Live-Modus: Spiel starten' : (st.live.phase === 'ende' ? '📄 Spielzusammenfassung' : '⏱ Live-Spiel läuft – öffnen')) + '</button>' +
       '<button class="btn sec" id="dSpiel">Spielbericht: Startelf, Ereignisse' + (erg ? ' (' + erg + ')' : '') + '</button>' +
       '<button class="btn sec" id="dBew">Spielbewertung' + (anzahlBewertet(st) ? ' (' + anzahlBewertet(st) + ' bewertet)' : '') + '</button></div>';
+    h += wtKarte(st);
     h += fsKarte(st);
     h += tkKarte(st);
     var dis = closed ? ' disabled' : '';
@@ -862,7 +864,9 @@
     $('#dGeg').addEventListener('change', function (e) { upd(function () { st.gegner = e.target.value.trim(); M.gegnerVerknuepfen(data, st); }); });
     if ($('#dGegOpen')) $('#dGegOpen').addEventListener('click', function () { gegnerOeffnen(M.gegnerVon(data, st).id); });
     bindGegnerInfo(st);
-    tkKarteBinden(st); fsBinden(st);
+    tkKarteBinden(st); fsBinden(st); wtBinden(st);
+    $('#dUhr').addEventListener('change', function (e) { upd(function () { st.uhrzeit = e.target.value; delete st.wetter; }); });
+    $('#dTreff').addEventListener('change', function (e) { upd(function () { st.treffen = e.target.value; }); });
     $('#dZeit').addEventListener('change', function (e) { upd(function () { var z = parseFloat(e.target.value); st.spielzeit = E.isNum(z) && z > 0 ? z : M.STANDARD_SPIELZEIT; }); });
     bindSeg('dOrt', function (v) { upd(function () { st.ort = v; }); });
     bindSeg('dGs', function (v) { upd(function () { if (v) st.gegnerStaerke = v; else delete st.gegnerStaerke; }); });
@@ -1022,6 +1026,138 @@
   }
   function bindNeuKnoepfe(st) { $$('[data-neu]').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-neu'), m = jetztMinute(st); if (!E.isNum(m)) m = letzteMinute(st); evSheet(st, t, null, m); }); }); }
 
+  // ---------- Wetter zur Spielzeit (ab 2.4; DWD über Bright Sky) ----------
+  var WT = window.PSVWetter, wtLaeuft = {}, wtAnim = null;
+  function wtCache(id) { try { return JSON.parse(localStorage.getItem('psv_wetter_' + id) || 'null'); } catch (e) { return null; } }
+  function wtCacheSetzen(id, c) { try { localStorage.setItem('psv_wetter_' + id, JSON.stringify(c)); } catch (e) { try { delete c.r; localStorage.setItem('psv_wetter_' + id, JSON.stringify(c)); } catch (e2) { } } }
+  function wtJetzt() { return window.__wtJetzt ? window.__wtJetzt() : Date.now(); }
+  function wtOrt(st) { return WT ? WT.ort(data, st, M.gegnerVon(data, st)) : null; }
+  function wtLive(st) { return st.live && st.live.phase && st.live.phase !== 'vor' ? st.live.phase : null; }
+  function wtHolen(url) {
+    return new Promise(function (ok, fehler) {
+      var x = new XMLHttpRequest(), t = setTimeout(function () { try { x.abort(); } catch (e) { } fehler(new Error('Zeitüberschreitung')); }, 15000);
+      x.open('GET', url); x.onload = function () { clearTimeout(t); if (x.status === 200) { try { ok(JSON.parse(x.responseText)); } catch (e) { fehler(e); } } else fehler(new Error('HTTP ' + x.status)); };
+      x.onerror = function () { clearTimeout(t); fehler(new Error('keine Verbindung')); }; x.send();
+    });
+  }
+  function wtFaellig(st, c, ph) {
+    var o = wtOrt(st); if (!o) return false;
+    if (!c || c.ortKey !== o.lat + ',' + o.lon) return true;
+    var alter = wtJetzt() - c.stand;
+    return ph === 'live' || ph === 'nah' ? alter > 4.5 * 60000 : ph === 'vorbei' ? !st.wetter && alter > 10 * 60000 : alter > 30 * 60000;
+  }
+  function wtLaden(st, erzwingen) {
+    if (!WT) return Promise.resolve();
+    var f = WT.fenster(st), ph = WT.phase(f, wtJetzt(), st.live && st.live.phase), o = wtOrt(st), c = wtCache(st.id);
+    if (!f || !o || ph === 'fern' || wtLaeuft[st.id] || navigator.onLine === false) return Promise.resolve();
+    if (ph === 'vorbei' && st.wetter && !erzwingen) return Promise.resolve();
+    if (!erzwingen && !wtFaellig(st, c, ph)) return Promise.resolve();
+    var u = WT.urls(o, f), radar = WT.radarAktiv(f, wtJetzt(), ph);
+    wtLaeuft[st.id] = true; wtZeigen(st);
+    return Promise.all([wtHolen(u.wetter), radar ? wtHolen(u.radar).catch(function () { return null; }) : Promise.resolve(null), wtHolen(u.warnungen).catch(function () { return null; })]).then(function (r) {
+      var alt = c || {}, nc = r[1] ? WT.nowcast(r[1]) : [];
+      var log = (alt.log || []).filter(function (x) { return x.t >= f.anpfiff - 600000 && x.t <= f.ende; });   // Radar-Messwerte während des Spiels
+      nc.forEach(function (x) { if (x.t <= wtJetzt() + 60000 && x.t >= f.anpfiff && x.t <= f.ende && !log.some(function (y) { return y.t === x.t; })) log.push(x); });
+      var neu = { stand: wtJetzt(), ortKey: o.lat + ',' + o.lon, w: { weather: r[0].weather }, r: r[1] || (radar ? null : alt.r && wtJetzt() - alt.stand < 3600000 ? alt.r : null), a: r[2] ? WT.warnungen(r[2]) : alt.a || [], log: log, fehler: '' };
+      wtCacheSetzen(st.id, neu);
+      if (ph === 'vorbei' || (ph === 'live' && st.live.phase === 'ende')) {   // Endstand im Spieltag festhalten
+        var e = WT.abschluss(neu.w, log, f, st.wetter); if (e) { e.text = WT.abschlussText(e); e.stand = neu.stand; st.wetter = e; commit(); }
+      }
+    }).catch(function (e) { var cc = wtCache(st.id) || {}; cc.fehler = e.message || String(e); wtCacheSetzen(st.id, cc); })
+      .then(function () { wtLaeuft[st.id] = false; wtZeigen(st); });
+  }
+  function wtKarte(st) { return WT ? '<div class="card wtcard" id="wtKarte" data-st="' + esc(st.id) + '">' + wtInhalt(st) + '</div>' : ''; }
+  function wtInhalt(st) {
+    var f = WT.fenster(st), now = wtJetzt(), ph = WT.phase(f, now, st.live && st.live.phase), o = wtOrt(st), c = wtCache(st.id);
+    var h = '<div class="row"><h2 class="grow" style="margin:0">🌦 Wetter zur Spielzeit</h2>' + (o && f ? '<button class="btn small sec" id="wtNeu" aria-label="Aktualisieren">⟳</button>' : '') + '</div>';
+    h += '<div class="muted wt-ort">📍 ' + (o ? esc(o.name || (o.lat.toFixed(4) + ', ' + o.lon.toFixed(4))) : 'Spielort fehlt') + ' <a href="#" id="wtOrt">ändern</a></div>';
+    if (!f) return h + '<div class="muted">Anpfiff-Zeit im Spieltag eintragen, dann erscheint hier das Wetter von Treffen bis Spielende.</div>' + (state.sub !== 'spieltag' ? '<button class="btn small sec" id="wtZeit">Anpfiff eintragen</button>' : '');
+    if (!o) return h + '<div class="muted">Auswärtsspiel: bitte den Platz des Gegners suchen oder Koordinaten eingeben.</div><button class="btn small" id="wtOrt2">Spielort festlegen</button>';
+    h += '<div class="muted">Treffen ' + WT.hhmm(f.treffen) + ' · Anpfiff ' + WT.hhmm(f.anpfiff) + ' · Ende ca. ' + WT.hhmm(f.ende) + '</div>';
+    if (ph === 'fern') return h + '<div class="muted">Die Vorhersage gibt es ab etwa 10 Tage vor dem Spiel.</div>';
+    if (ph === 'vorbei' && st.wetter) h += '<div class="wt-end">' + esc(st.wetter.text) + '</div>';
+    if (!c || !c.w) return h + '<div class="muted">' + (wtLaeuft[st.id] ? 'Wird geladen…' : navigator.onLine === false ? 'Offline – noch keine Wetterdaten.' : c && c.fehler ? 'Wetter nicht abrufbar: ' + esc(c.fehler) : 'Noch keine Daten.') + '</div>' + wtFuss();
+    var S = WT.stunden(c.w, f), W = WT.relevanteWarnungen(c.a || [], f);
+    W.forEach(function (w) { h += '<div class="warnbox wt-warn">⚠ ' + esc(w.titel) + ' <span class="muted">(' + WT.hhmm(w.von) + '–' + WT.hhmm(w.bis) + ')</span></div>'; });
+    if (S.some(function (x) { return x.gewitter; })) h += '<div class="warnbox wt-warn">⛈ Gewitter möglich – bei Donner Spiel unterbrechen!</div>';
+    h += '<div class="wt-std">' + S.map(function (x) {
+      return '<div class="wt-h"><b>' + WT.hhmm(x.t) + '</b><span class="wt-i">' + (WT.ICON[x.icon] || '') + '</span><span>' + WT.zahl(x.temp) + ' °C</span><span class="wt-r">💧 ' + WT.zahl(x.wkt) + ' %' + (x.mm > 0 ? ' · ' + WT.zahl(x.mm, 1) + ' mm' : '') + '</span><span class="muted">💨 ' + WT.zahl(x.wind) + (x.boeen ? ' / ' + WT.zahl(x.boeen) : '') + ' km/h</span></div>';
+    }).join('') + '</div>';
+    var nc = (c.r ? WT.nowcast(c.r) : []).filter(function (x) { return x.t >= now - 10 * 60000; });
+    if (nc.length && WT.radarAktiv(f, now, ph)) {
+      var max = Math.max(2, Math.max.apply(null, nc.map(function (x) { return x.mmh; })));
+      h += '<div class="wt-nc"><b>' + esc(WT.nowcastText(nc, now)) + '</b><div class="wt-bars">' + nc.map(function (x) { var hh = Math.round(Math.min(1, x.mmh / max) * 44); return '<div class="wt-bar' + (x.t <= now && now < x.t + 300000 ? ' jetzt' : '') + '" title="' + WT.hhmm(x.t) + ' ' + WT.zahl(x.mmh, 1) + ' mm/h"><i style="height:' + (x.mmh >= 0.1 ? Math.max(3, hh) : 0) + 'px;background:rgb(' + (WT.farbe(x.mmh) || [200, 200, 200]).join(',') + ')"></i></div>'; }).join('') + '</div><div class="wt-achse"><span>' + WT.hhmm(nc[0].t) + '</span><span>Regenradar 5-Min.-Schritte</span><span>' + WT.hhmm(nc[nc.length - 1].t) + '</span></div>' +
+        '<div class="wt-karte"><canvas id="wtCanvas" width="180" height="180"></canvas><div class="muted" id="wtFrame"></div></div></div>';
+    }
+    return h + wtFuss(c);
+  }
+  function wtFuss(c) {
+    return '<div class="muted wt-fuss">' + (c && c.stand ? 'Stand: ' + WT.hhmm(c.stand) + (navigator.onLine === false ? ' · offline' : '') + (c.fehler ? ' · Aktualisierung fehlgeschlagen' : '') + ' · ' : '') + esc(WT.QUELLE) + '</div>';
+  }
+  function wtZeigen(st) { var k = $('#wtKarte'); if (!k || k.getAttribute('data-st') !== String(st.id)) return; k.innerHTML = wtInhalt(st); wtBinden(st, true); }
+  function wtBinden(st, nurKarte) {
+    if (!WT || !$('#wtKarte')) return;
+    if ($('#wtNeu')) $('#wtNeu').addEventListener('click', function () { wtLaden(st, true); });
+    ['#wtOrt', '#wtOrt2'].forEach(function (s) { if ($(s)) $(s).addEventListener('click', function (e) { e.preventDefault(); wtOrtSheet(st); }); });
+    if ($('#wtZeit')) $('#wtZeit').addEventListener('click', function () { state.stId = st.id; setTab('spieltag'); go('spieltag'); });
+    wtRadarAnimieren(st);
+    if (!nurKarte) wtLaden(st);
+  }
+  function wtRadarAnimieren(st) {
+    clearInterval(wtAnim); var cv = $('#wtCanvas'), c = wtCache(st.id); if (!cv || !c || !c.r || !c.r.radar) return;
+    var R = c.r.radar, p = c.r.latlon_position || { x: 0, y: 0 }, g0 = R[0].precipitation_5, hgt = g0.length, wdt = g0[0].length, ctx = cv.getContext('2d'), sx = cv.width / wdt, sy = cv.height / hgt, i = 0;
+    function bild() {
+      if (!document.body.contains(cv)) { clearInterval(wtAnim); return; }
+      var g = R[i].precipitation_5; ctx.fillStyle = '#eef3ee'; ctx.fillRect(0, 0, cv.width, cv.height);
+      for (var y = 0; y < hgt; y++) for (var x = 0; x < wdt; x++) { var col = WT.farbe((g[y][x] || 0) * 0.12); if (col) { ctx.fillStyle = 'rgb(' + col.join(',') + ')'; ctx.fillRect(x * sx, y * sy, Math.ceil(sx), Math.ceil(sy)); } }
+      ctx.strokeStyle = 'rgba(0,0,0,.25)'; [5, 10].forEach(function (km) { ctx.beginPath(); ctx.arc((p.x + 0.5) * sx, (p.y + 0.5) * sy, km * sx, 0, 7); ctx.stroke(); });
+      ctx.fillStyle = '#1b5e20'; ctx.beginPath(); ctx.arc((p.x + 0.5) * sx, (p.y + 0.5) * sy, 5, 0, 7); ctx.fill();
+      var fr = $('#wtFrame'); if (fr) fr.textContent = 'Radar ' + WT.hhmm(Date.parse(R[i].timestamp)) + (Date.parse(R[i].timestamp) > wtJetzt() ? ' (Vorhersage)' : '') + ' · Kreise 5/10 km · ' + (i + 1) + '/' + R.length;
+      i = (i + 1) % R.length;
+    }
+    bild(); wtAnim = setInterval(bild, 500);
+  }
+  function wtGeocode(q) {   // Adresse → Koordinaten (OpenStreetMap Nominatim, nur auf Knopfdruck; Ersatz: Open-Meteo-Ortssuche)
+    return wtHolen('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=de&accept-language=de&q=' + encodeURIComponent(q)).then(function (L) {
+      if (L && L.length) return L.map(function (x) { return { name: x.display_name.split(', ').slice(0, 4).join(', '), lat: +x.lat, lon: +x.lon, quelle: 'osm' }; });
+      return wtHolen('https://geocoding-api.open-meteo.com/v1/search?count=5&language=de&countryCode=DE&name=' + encodeURIComponent(q)).then(function (r) { return ((r && r.results) || []).map(function (x) { return { name: [x.name, x.admin2 || x.admin1].filter(Boolean).join(', '), lat: x.latitude, lon: x.longitude, quelle: 'open-meteo' }; }); });
+    });
+  }
+  function wtOrtSetzen(st, o, fuerGegner) {
+    st.wetterOrt = { name: o.name, lat: Math.round(o.lat * 1e5) / 1e5, lon: Math.round(o.lon * 1e5) / 1e5, quelle: o.quelle || 'manuell' };
+    var g = M.gegnerVon(data, st); if (fuerGegner && g) g.koord = { name: o.name, lat: st.wetterOrt.lat, lon: st.wetterOrt.lon };
+    delete st.wetter; commit(); closeSheet(); keepScroll(render); toast('Spielort gespeichert');
+  }
+  function wtOrtSheet(st) {
+    var g = M.gegnerVon(data, st), auswaerts = st.ort === 'Auswärts';
+    openSheet('<h3>Spielort für das Wetter</h3>' +
+      '<button class="btn sec" id="wsHeim">🏠 Heimplatz: PSV-Sportanlage, Molkereiweg 14a, Wesel</button>' +
+      (g && g.koord ? '<button class="btn sec" id="wsGeg">🚩 Platz von ' + esc(g.name) + ': ' + esc(g.koord.name) + '</button>' : '') +
+      '<label class="f">Adresse / Sportplatz suchen</label><input type="text" id="wsQ" value="' + esc(auswaerts && g && g.platz ? g.platz + (g.koord ? '' : '') : '') + '" placeholder="z. B. Sportplatz Haldern, Rees"><button class="btn" id="wsSuch">Suchen</button><div id="wsErg"></div>' +
+      '<label class="f">oder Koordinaten (Breite, Länge)</label><input type="text" id="wsKo" placeholder="51.6799, 6.6395"><button class="btn sec" id="wsKoOk">Koordinaten übernehmen</button>' +
+      '<div class="muted" style="margin-top:8px">Suche: OpenStreetMap Nominatim (© OpenStreetMap-Mitwirkende, ODbL). Übertragen wird nur der Suchtext.</div>', function (root) {
+      $('#wsHeim', root).addEventListener('click', function () { var H = WT.HEIM; wtOrtSetzen(st, { name: 'PSV-Sportanlage Molkereiweg 14a, Wesel', lat: H.lat, lon: H.lon, quelle: 'heim' }); });
+      if ($('#wsGeg', root)) $('#wsGeg', root).addEventListener('click', function () { wtOrtSetzen(st, Object.assign({ quelle: 'gegner' }, g.koord)); });
+      $('#wsSuch', root).addEventListener('click', function () {
+        var q = $('#wsQ', root).value.trim(); if (!q) return; var erg = $('#wsErg', root); erg.innerHTML = '<div class="muted">Suche…</div>';
+        wtGeocode(q).then(function (L) {
+          if (!L.length) { erg.innerHTML = '<div class="muted">Nichts gefunden – andere Schreibweise oder Koordinaten eingeben.</div>'; return; }
+          erg.innerHTML = L.map(function (o, i) { return '<button class="btn small sec wt-treffer" data-i="' + i + '">' + esc(o.name) + '</button>'; }).join('');
+          $$('[data-i]', erg).forEach(function (b) { b.addEventListener('click', function () { wtOrtSetzen(st, L[+b.getAttribute('data-i')], auswaerts); }); });
+        }).catch(function (e) { erg.innerHTML = '<div class="muted">Suche nicht möglich: ' + esc(e.message) + '</div>'; });
+      });
+      $('#wsKoOk', root).addEventListener('click', function () {
+        var m = /(-?\d+[.,]\d+)\s*[,; ]\s*(-?\d+[.,]\d+)/.exec($('#wsKo', root).value); if (!m) { toast('Format: 51.6799, 6.6395'); return; }
+        var la = +m[1].replace(',', '.'), lo = +m[2].replace(',', '.'); if (Math.abs(la) > 90 || Math.abs(lo) > 180) { toast('Koordinaten ungültig'); return; }
+        wtOrtSetzen(st, { name: la.toFixed(4) + ', ' + lo.toFixed(4), lat: la, lon: lo, quelle: 'manuell' }, auswaerts);
+      });
+    });
+  }
+  setInterval(function () {   // alle 5 Min. (nah am Spiel / live), sonst seltener – nur solange die Karte sichtbar ist
+    var k = $('#wtKarte'); if (!k || document.hidden) return; var st = M.getSpieltag(data, k.getAttribute('data-st')); if (st) wtLaden(st);
+  }, (window.__wtTakt || 60000));
+  window.addEventListener('online', function () { var k = $('#wtKarte'); if (k) { var st = M.getSpieltag(data, k.getAttribute('data-st')); if (st) wtLaden(st, true); } });
+
   // ---------- Formation & Startelf (ab 2.3.1: in jedem Spieltag, jederzeit änderbar) ----------
   function fsLaeuft(st) { return !!(st.live && (st.live.phase === 'h1' || st.live.phase === 'pause' || st.live.phase === 'h2')); }
   function fsFertig(st) { return st.status === 'abgeschlossen' || !!(st.live && st.live.phase === 'ende'); }
@@ -1141,6 +1277,7 @@
     if (L.phase === 'h2') h += '<button class="btn big warn" id="lvStop">⏹ Abpfiff</button>';
     if (L.phase === 'ende') h += '<button class="btn big" id="lvSumm">📄 Spielzusammenfassung</button><button class="btn sec" id="lvWeiter">Abpfiff rückgängig – weiterspielen</button>';
     h += '</div>';
+    h += wtKarte(st);
     if (L.phase !== 'vor') h += '<div class="card"><div class="row qa"><button class="btn big" data-neu="tor">⚽ Tor</button><button class="btn big sec" data-neu="gegentor">🥅 Gegentor</button></div><div class="row qa"><button class="btn big" data-neu="wechsel">🔁 Wechsel</button><button class="btn big warn" data-neu="fehler">⚠ Abwehrfehler</button></div><div class="row qa"><button class="btn sec" data-neu="notiz">📝 Notiz</button><button class="btn sec" data-neu="karte">🟨 Karte / Verletzung</button></div><div class="row qa"><button class="btn sec" id="lvGeg">🔎 Gegner-Notiz</button></div></div>';
     if (L.phase === 'vor') h += fsKarte(st);
     else h += '<div class="card"><h2>' + (L.phase === 'vor' ? 'Startelf' : 'Auf dem Platz') + '</h2>' + '<div class="row"><button class="btn small sec" id="lvForm">🔀 Formation: ' + esc(E.pitchByCode(M.liveFormation(st, null)).name) + '</button><button class="btn small sec" id="lvStartelf">✎ Startelf (Anpfiff) ändern</button></div>' + livePitch(st) + '<div class="muted">' + (L.phase === 'vor' ? 'Startelf vor dem Anpfiff: im Spielbericht ändern (Drag & Drop).' : 'Von der Bank auf eine Position ziehen = Wechsel zur aktuellen Minute, zwei Positionen tauschen = Positionstausch.') + '</div></div>';
@@ -1149,7 +1286,8 @@
   }
   function bindLive() {
     var st = M.getSpieltag(data, state.stId), L = M.live(st);
-    function akt(a) { var now = Date.now(); if (M.liveAktion(st, a, now)) { if (a === 'stop') st.live.zusammenfassung = M.zusammenfassungText(data, st); commit(); wachHalten(); keepScroll(render); } }
+    wtBinden(st);
+    function akt(a) { var now = Date.now(); if (M.liveAktion(st, a, now)) { if (a === 'stop') { st.live.zusammenfassung = M.zusammenfassungText(data, st); setTimeout(function () { wtLaden(st, true).then(function () { if (st.wetter) { st.live.zusammenfassung = M.zusammenfassungText(data, st); commit(); } }); }, 50); } commit(); wachHalten(); keepScroll(render); } }
     if ($('#hzMinus')) { $('#hzMinus').addEventListener('click', function () { L.halbzeit = Math.max(5, L.halbzeit - 5); commit(); keepScroll(render); }); $('#hzPlus').addEventListener('click', function () { L.halbzeit = Math.min(45, L.halbzeit + 5); commit(); keepScroll(render); }); }
     if ($('#lvGeg')) $('#lvGeg').addEventListener('click', function () { gegnerNotizFuerSpieltag(st); });
     bindGegnerInfo(st);
@@ -1363,6 +1501,7 @@
     var info = closed ? { v: st.snapshot.varianten[sz].v, einsetzbar: st.snapshot.einsetzbar, nicht: st.snapshot.nichtEingeplant } : { v: R.lineups.varianten[sz].v, einsetzbar: R.lineups.einsetzbar, nicht: R.lineups.nichtEingeplant };
     var h = gegnerInfoKarte(st) + '<div class="card stbar' + (closed ? ' lockcard' : '') + '"><div class="row"><div class="grow"><b>' + esc(M.titel(st)) + '</b><div class="muted">' + (closed ? '🔒 Vorschlag damals – eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) + ' · tatsächliche Startelf im Spieltag änderbar' : 'offen – rechnet live mit aktuellen Noten') + '</div></div>' +
       '<button class="btn small sec" id="stOpen">' + (closed ? 'Startelf ändern' : 'Spieltag') + '</button><button class="btn small sec" id="stWahl">Wechseln</button></div></div>';
+    h += wtKarte(st);
     h += '<div class="seg" id="szSeg" style="margin-bottom:6px"><button data-v="7" class="' + (sz === '7' ? 'on' : '') + '">7er</button><button data-v="9" class="' + (sz === '9' ? 'on' : '') + '">9er</button></div>';
     var segCodes = pr.slice(); if (segCodes.indexOf(code) < 0) segCodes.push(code);
     h += '<div class="row fmrow"><div class="seg small grow" id="fmSeg">' + segCodes.map(function (c) { var pt = E.pitchByCode(c); return '<button data-v="' + c + '" class="' + (c === code ? 'on' : '') + '">' + pt.kurz + (c === pr[0] ? ' (Abwehr)' : (c === pr[1] ? ' (Angriff)' : '')) + '</button>'; }).join('') + '</div><button class="btn small" id="fmMore">Formationen ▾</button></div>';
@@ -1387,6 +1526,7 @@
     return h;
   }
   function bindAufstellung() {
+    if (aktiv()) wtBinden(aktiv());
     if ($('#goNeu')) { $('#goNeu').addEventListener('click', function () { state.tab = 'spieltag'; go('neu'); }); return; }
     $$('#szSeg button').forEach(function (b) { b.addEventListener('click', function () { state.size = b.getAttribute('data-v'); render(); }); });
     $$('#fmSeg button').forEach(function (b) { b.addEventListener('click', function () { state.form[state.size] = b.getAttribute('data-v'); render(); }); });
@@ -2295,5 +2435,5 @@
   if (hash[0] === 'detail') { state.tab = 'kader'; state.detail = +hash[1]; }
   else if (hash[0]) { if (['kader', 'ranking', 'spieltag', 'aufstellung', 'mehr'].indexOf(hash[0]) >= 0) state.tab = hash[0]; if (hash[1] && /^[79][A-F]$/.test(hash[1])) { state.size = hash[1].charAt(0); state.form[state.size] = hash[1]; } }
   render();
-  window.__psv = { CLOUD: CLOUD, fotosUebernehmen: fotosUebernehmen, get data() { return data; }, get R() { return R; }, state: state, render: render, commit: commit, go: go, setTab: setTab, importiere: importiere, exportText: exportText, M: M, P: P, praesErzeugen: praesErzeugen };
+  window.__psv = { CLOUD: CLOUD, fotosUebernehmen: fotosUebernehmen, get data() { return data; }, get R() { return R; }, state: state, render: render, commit: commit, go: go, setTab: setTab, importiere: importiere, exportText: exportText, M: M, P: P, praesErzeugen: praesErzeugen, wtLaden: wtLaden };
 })();
