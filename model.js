@@ -309,10 +309,10 @@
   function vorschlagIgnorieren(d, v) { d.vorschlaegeIgnoriert[v.pid + ':' + v.row] = v.signatur; }
 
   // ---------- Spielverlauf: tatsächliche Startelf, Tore, Vorlagen, Abwehrfehler, Wechsel ----------
-  function leererSpielbericht() { return { startelf: null, tore: [], fehler: [], wechsel: [], gegentore: 0, gegen: [], notizen: [], karten: [], tausch: [] }; }
+  function leererSpielbericht() { return { startelf: null, tore: [], fehler: [], wechsel: [], gegentore: 0, gegen: [], notizen: [], karten: [], tausch: [], formwechsel: [] }; }
   function spielbericht(st) {
     if (!st.spiel) st.spiel = leererSpielbericht();
-    var s = st.spiel; ['tore', 'fehler', 'wechsel', 'gegen', 'notizen', 'karten', 'tausch'].forEach(function (k) { s[k] = s[k] || []; }); if (!isNum(s.gegentore)) s.gegentore = 0;
+    var s = st.spiel; ['tore', 'fehler', 'wechsel', 'gegen', 'notizen', 'karten', 'tausch', 'formwechsel'].forEach(function (k) { s[k] = s[k] || []; }); if (!isNum(s.gegentore)) s.gegentore = 0;
     return s;
   }
   function formationVon(code) { for (var i = 0; i < E.PITCHES.length; i++) if (E.PITCHES[i].code === code) return E.PITCHES[i]; return null; }
@@ -329,10 +329,10 @@
     var f = formationVon(s.formation); if (!f) return [];
     return f.slots.map(function (sl, i) { return { pos: sl[0], pid: s.slots[i] === undefined ? null : s.slots[i] }; });
   }
-  function setFormation(st, code) {   // Kinder wandern auf gleiche Position, sonst auf den nächstgelegenen Platz
-    var s = spielbericht(st), f = formationVon(code); if (!f) return;
-    var of = s.startelf ? formationVon(s.startelf.formation) : null, alt = [];
-    if (of) of.slots.forEach(function (sl, i) { var pid = s.startelf.slots[i]; if (pid) alt.push({ pid: pid, pos: sl[0], x: sl[1], y: sl[2] }); });
+  function umverteilen(alterCode, alteSlots, code) {   // Kinder wandern auf gleiche Position, sonst auf den nächstgelegenen Platz (ab 2.3.1 auch für Formationswechsel im Spiel)
+    var f = formationVon(code); if (!f) return null;
+    var of = formationVon(alterCode), alt = [];
+    if (of) of.slots.forEach(function (sl, i) { var pid = alteSlots[i]; if (pid) alt.push({ pid: pid, pos: sl[0], x: sl[1], y: sl[2] }); });
     var slots = f.slots.map(function () { return null; }), frei = alt.slice();
     f.slots.forEach(function (sl, i) {   // 1. gleiche Position (bei zwei IV: der nähere)
       var best = -1, bd = 1e9;
@@ -348,7 +348,11 @@
       if (bi < 0) break;
       slots[bi] = frei[bk].pid; frei.splice(bk, 1);
     }
-    s.startelf = { formation: code, slots: slots };   // übrig gebliebene Kinder (kleinere Formation) sitzen auf der Bank
+    return slots;   // übrig gebliebene Kinder (kleinere Formation) sitzen auf der Bank
+  }
+  function setFormation(st, code) {
+    var s = spielbericht(st); if (!formationVon(code)) return;
+    s.startelf = { formation: code, slots: umverteilen(s.startelf ? s.startelf.formation : null, s.startelf ? s.startelf.slots : [], code) };
   }
   // Drag & Drop auf dem Spielfeld: src/dst = 's:<Slot-Index>' | 'b:<Kind-ID>' (Bank) | 'bank'
   function startelfDrop(st, src, dst) {
@@ -404,6 +408,7 @@
     s.fehler.forEach(function (f) { if (!fehlerZuGegentor[f.id]) ev.push({ typ: 'fehler', minute: f.minute, zeit: f.zeit, text: '⚠ Abwehrfehler ' + name(f.pid) + (f.notiz ? ' – ' + f.notiz : ''), id: f.id }); });
     s.wechsel.forEach(function (w) { ev.push({ typ: 'wechsel', minute: w.minute, zeit: w.zeit, text: '🔁 ' + (w.rein ? name(w.rein) : '?') + ' für ' + (w.raus ? name(w.raus) : '?'), id: w.id }); });
     s.tausch.forEach(function (x) { ev.push({ typ: 'tausch', minute: x.minute, zeit: x.zeit, text: '↔ Positionstausch ' + name(x.a) + ' / ' + name(x.b), id: x.id }); });
+    (s.formwechsel || []).forEach(function (x) { var f = formationVon(x.formation); ev.push({ typ: 'formation', minute: x.minute, zeit: x.zeit, text: '🔀 Formationswechsel → ' + (f ? f.name : x.formation), id: x.id }); });
     s.karten.forEach(function (k) { ev.push({ typ: 'karte', minute: k.minute, zeit: k.zeit, text: (KARTEN[k.art] || '🟨') + ' ' + k.art + ' ' + name(k.pid), id: k.id }); });
     s.notizen.forEach(function (n) { ev.push({ typ: 'notiz', minute: n.minute, zeit: n.zeit, text: '📝 ' + (n.pid ? name(n.pid) + ': ' : '') + n.text, id: n.id }); });
     ev.forEach(function (e, k) { e._k = k; });
@@ -786,7 +791,7 @@
   function addNotiz(st, minute, text, pid) { var n = { id: eid(), minute: isNum(minute) ? minute : null, text: String(text || ''), pid: pid || null }; spielbericht(st).notizen.push(n); return n; }
   function addKarte(st, minute, pid, art) { var k = { id: eid(), minute: isNum(minute) ? minute : null, pid: pid, art: KARTEN[art] ? art : 'Gelb' }; spielbericht(st).karten.push(k); return k; }
   function addTausch(st, minute, a, b) { var x = { id: eid(), minute: isNum(minute) ? minute : null, a: a, b: b }; spielbericht(st).tausch.push(x); return x; }
-  var EV_LISTEN = ['tore', 'fehler', 'wechsel', 'gegen', 'notizen', 'karten', 'tausch'];
+  var EV_LISTEN = ['tore', 'fehler', 'wechsel', 'gegen', 'notizen', 'karten', 'tausch', 'formwechsel'];
   function findeEreignis(st, id) { var s = spielbericht(st), r = null; EV_LISTEN.forEach(function (k) { s[k].forEach(function (x) { if (x.id === id) r = { liste: k, ev: x }; }); }); return r; }
   function entferneEreignis(st, id) {
     var s = spielbericht(st), f = findeEreignis(st, id); if (!f) return;
@@ -856,17 +861,23 @@
     return true;
   }
   // Aufstellung mit Positionen zu einer Minute (Startelf + Wechsel + Positionstausch)
-  function liveAufstellung(st, minute) {
-    var se = startelfListe(st), slots = se.map(function (x) { return x.pid; }), s = spielbericht(st), m0 = isNum(minute) ? minute : Infinity;
-    var ev = s.wechsel.map(function (w, k) { return { t: 'w', e: w, k: k }; }).concat(s.tausch.map(function (x, k) { return { t: 't', e: x, k: 1000 + k }; }));
+  function liveVerlauf(st, minute) {   // Aufstellung + Formation zur Minute (Wechsel, Positionstausch, Formationswechsel)
+    var s = spielbericht(st), se = s.startelf; if (!se) return { formation: null, liste: [] };
+    var code = se.formation, slots = startelfListe(st).map(function (x) { return x.pid; }), m0 = isNum(minute) ? minute : Infinity;
+    var ev = s.wechsel.map(function (w, k) { return { t: 'w', e: w, k: k }; }).concat(s.tausch.map(function (x, k) { return { t: 't', e: x, k: 1000 + k }; }), (s.formwechsel || []).map(function (x, k) { return { t: 'f', e: x, k: 2000 + k }; }));
     ev.sort(function (a, b) { return (isNum(a.e.minute) ? a.e.minute : 9999) - (isNum(b.e.minute) ? b.e.minute : 9999) || (a.e.zeit || 0) - (b.e.zeit || 0) || a.k - b.k; });
     ev.forEach(function (x) {
       var mm = isNum(x.e.minute) ? x.e.minute : 9999; if (mm > m0) return;
       if (x.t === 'w') { var i = slots.indexOf(x.e.raus); if (i >= 0 && slots.indexOf(x.e.rein) < 0) slots[i] = x.e.rein; }
-      else { var a = slots.indexOf(x.e.a), b = slots.indexOf(x.e.b); if (a >= 0 && b >= 0) { slots[a] = x.e.b; slots[b] = x.e.a; } }
+      else if (x.t === 't') { var a = slots.indexOf(x.e.a), b = slots.indexOf(x.e.b); if (a >= 0 && b >= 0) { slots[a] = x.e.b; slots[b] = x.e.a; } }
+      else if (formationVon(x.e.formation)) { slots = umverteilen(code, slots, x.e.formation); code = x.e.formation; }
     });
-    return se.map(function (x, i) { return { pos: x.pos, pid: slots[i] || null }; });
+    var f = formationVon(code);
+    return { formation: code, liste: f.slots.map(function (sl, i) { return { pos: sl[0], pid: slots[i] || null }; }) };
   }
+  function liveAufstellung(st, minute) { return liveVerlauf(st, minute).liste; }
+  function liveFormation(st, minute) { return liveVerlauf(st, minute).formation; }
+  function addFormwechsel(st, minute, code) { var x = { id: eid(), minute: isNum(minute) ? minute : null, formation: code }; spielbericht(st).formwechsel.push(x); return x; }
   // Drag & Drop im Live-Modus: Bank → Position = Wechsel, Position ↔ Position = Positionstausch
   function liveDrop(st, src, dst, minute) {
     var a = src.split(':'), b = dst.split(':'), auf = liveAufstellung(st, null);
@@ -927,7 +938,7 @@
       (z.fehler.length ? '<h2>Abwehrfehler</h2>' + tab(['Spieler', 'Anzahl'], z.fehler.map(function (f) { return [f.name, f.n]; })) : '') +
       (z.notizen.length ? '<h2>Notizen</h2>' + tab(['Min.', 'Notiz'], z.notizen.map(function (n) { return [minTxt(n.minute), n.text]; })) : '') +
       '<h2>Einsatzminuten</h2>' + tab(['Spieler', 'Minuten'], z.minuten.map(function (m) { return [m.name, m.min + ' / ' + z.spielzeit]; })) +
-      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.3</p></body></html>';
+      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.3.1</p></body></html>';
   }
   var api = { DATA_VERSION: DATA_VERSION, KRIT_FELD: KRIT_FELD, KRIT_TW: KRIT_TW, FORM_RECENCY: FORM_RECENCY, STANDARD_SPIELZEIT: STANDARD_SPIELZEIT,
     VORSCHLAG_MIN_SPIELE: VORSCHLAG_MIN_SPIELE, VORSCHLAG_SCHWELLE: VORSCHLAG_SCHWELLE,
@@ -946,7 +957,7 @@
     gegnerZusammenfuehren: gegnerZusammenfuehren, gegnerLoeschen: gegnerLoeschen, gegnerAehnlich: gegnerAehnlich, gegnerInfo: gegnerInfo, mitErgebnis: mitErgebnis,
     POS_KRIT: POS_KRIT, GEGNER: GEGNER, posGruppe: posGruppe, KRIT_FELD: KRIT_FELD, KRIT_TW: KRIT_TW,
     aktiveSpieler: aktiveSpieler, ehemaligeSpieler: ehemaligeSpieler, beteiligt: beteiligt, vergangeneDaten: vergangeneDaten, archivieren: archivieren, wiederherstellen: wiederherstellen, endgueltigLoeschen: endgueltigLoeschen, spielerById: spielerById,
-    live: live, liveLaeuft: liveLaeuft, liveSekunden: liveSekunden, liveMinute: liveMinute, liveAktion: liveAktion, liveAufstellung: liveAufstellung, liveDrop: liveDrop, standardHalbzeit: standardHalbzeit,
+    live: live, liveLaeuft: liveLaeuft, liveSekunden: liveSekunden, liveMinute: liveMinute, liveAktion: liveAktion, liveAufstellung: liveAufstellung, liveFormation: liveFormation, addFormwechsel: addFormwechsel, umverteilen: umverteilen, liveDrop: liveDrop, standardHalbzeit: standardHalbzeit,
     zusammenfassung: zusammenfassung, zusammenfassungText: zusammenfassungText, zusammenfassungHtml: zusammenfassungHtml, KARTEN: KARTEN, addFehler: addFehler, addWechsel: addWechsel, entferneEreignis: entferneEreignis };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.PSVModel = api;
 })(this);

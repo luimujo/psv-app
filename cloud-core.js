@@ -103,7 +103,7 @@
 
   // ---------- Sicherungen (ab 2.3) ----------
   var GRUENDE = { taeglich: 'Tägliche Sicherung', manuell: 'Manuell gesichert', vor_live: 'Vor Live-Spiel', vor_import: 'Vor SpielerPlus-Import', vor_json: 'Vor Datei-Import',
-    vor_archiv: 'Vor Entfernen eines Spielers', vor_st_loeschen: 'Vor Löschen eines Spieltags', vor_hochladen: 'Vor Hochladen lokaler Daten', vor_wiederherstellen: 'Vor Wiederherstellung' };
+    vor_archiv: 'Vor Entfernen eines Spielers', vor_st_loeschen: 'Vor Löschen eines Spieltags', vor_hochladen: 'Vor Hochladen lokaler Daten', vor_wiederherstellen: 'Vor Wiederherstellung', vor_bearbeiten: 'Vor Bearbeiten eines abgeschlossenen Spieltags' };
   function grundText(g) { return GRUENDE[g] || 'Sicherung'; }
   // Fotos aus den Abschnitten lösen: foto_<id> → {ref: hash}; Fotos selbst nur einmal je Hash speichern
   async function sicherungPacken(secs) {

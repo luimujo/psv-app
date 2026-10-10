@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.3';
+  var APP_VERSION = '2.3.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -824,6 +824,7 @@
       '<button class="btn" id="dLive">' + (!st.live || st.live.phase === 'vor' ? '▶ Live-Modus: Spiel starten' : (st.live.phase === 'ende' ? '📄 Spielzusammenfassung' : '⏱ Live-Spiel läuft – öffnen')) + '</button>' +
       '<button class="btn sec" id="dSpiel">Spielbericht: Startelf, Ereignisse' + (erg ? ' (' + erg + ')' : '') + '</button>' +
       '<button class="btn sec" id="dBew">Spielbewertung' + (anzahlBewertet(st) ? ' (' + anzahlBewertet(st) + ' bewertet)' : '') + '</button></div>';
+    h += fsKarte(st);
     h += tkKarte(st);
     var dis = closed ? ' disabled' : '';
     var kapOpts = [['', '– kein Kapitän –']].concat(named().map(function (i) { var n = data.players[i].name; return [E.firstName(n), n]; }));
@@ -861,7 +862,7 @@
     $('#dGeg').addEventListener('change', function (e) { upd(function () { st.gegner = e.target.value.trim(); M.gegnerVerknuepfen(data, st); }); });
     if ($('#dGegOpen')) $('#dGegOpen').addEventListener('click', function () { gegnerOeffnen(M.gegnerVon(data, st).id); });
     bindGegnerInfo(st);
-    tkKarteBinden(st);
+    tkKarteBinden(st); fsBinden(st);
     $('#dZeit').addEventListener('change', function (e) { upd(function () { var z = parseFloat(e.target.value); st.spielzeit = E.isNum(z) && z > 0 ? z : M.STANDARD_SPIELZEIT; }); });
     bindSeg('dOrt', function (v) { upd(function () { st.ort = v; }); });
     bindSeg('dGs', function (v) { upd(function () { if (v) st.gegnerStaerke = v; else delete st.gegnerStaerke; }); });
@@ -999,9 +1000,15 @@
       (b.ereignisse.length ? b.ereignisse.map(function (e) { return '<div class="evt ' + e.typ + '" data-ev="' + e.id + '"><span class="min">' + (E.isNum(e.minute) ? e.minute + '′' : '–') + '</span><span class="grow">' + esc(e.text) + '</span><span class="chev">✎</span></div>'; }).join('') : '<div class="muted">Noch keine Ereignisse.</div>') +
       '<div class="muted" style="margin-top:6px">Eintrag antippen = Minute, Spieler oder Text ändern bzw. löschen. Ergebnis, Minuten, Schlussaufstellung und Statistik rechnen automatisch neu.</div></div>';
   }
+  function fwSheet(st, e) {   // Formationswechsel: Minute ändern oder löschen
+    dialog('Formationswechsel', '<p>' + esc(E.pitchByCode(e.formation) ? E.pitchByCode(e.formation).name : e.formation) + '</p><label class="f">Minute</label><input type="number" id="fwMin" min="0" max="120" value="' + (E.isNum(e.minute) ? e.minute : '') + '">', [
+      { t: 'Speichern', f: function (m) { var v = parseInt($('#fwMin', m).value, 10); e.minute = E.isNum(v) ? v : null; nachEreignis(st); keepScroll(render); } },
+      { t: 'Löschen', sek: true, f: function () { var L = M.spielbericht(st).formwechsel; L.splice(L.indexOf(e), 1); nachEreignis(st); keepScroll(render); } },
+      { t: 'Abbrechen', sek: true }]);
+  }
   function bindTimeline(st) {
     if ($('#evIns')) $('#evIns').addEventListener('click', function () { einfuegenSheet(st); });
-    $$('.evt[data-ev]').forEach(function (r) { r.addEventListener('click', function () { var f = M.findeEreignis(st, r.getAttribute('data-ev')); if (f) evSheet(st, typVonListe(f.liste), f.ev); }); });
+    $$('.evt[data-ev]').forEach(function (r) { r.addEventListener('click', function () { var f = M.findeEreignis(st, r.getAttribute('data-ev')); if (f && f.liste === 'formwechsel') return fwSheet(st, f.ev); if (f) evSheet(st, typVonListe(f.liste), f.ev); }); });
   }
   function minutenHtml(st, b) {
     var T = M.spielzeitVon(st), m = b.minuten, ks = Object.keys(m).sort(function (a, c) { return m[c] - m[a] || vorn(+a).localeCompare(vorn(+c)); });
@@ -1015,14 +1022,85 @@
   }
   function bindNeuKnoepfe(st) { $$('[data-neu]').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-neu'), m = jetztMinute(st); if (!E.isNum(m)) m = letzteMinute(st); evSheet(st, t, null, m); }); }); }
 
+  // ---------- Formation & Startelf (ab 2.3.1: in jedem Spieltag, jederzeit änderbar) ----------
+  function fsLaeuft(st) { return !!(st.live && (st.live.phase === 'h1' || st.live.phase === 'pause' || st.live.phase === 'h2')); }
+  function fsFertig(st) { return st.status === 'abgeschlossen' || !!(st.live && st.live.phase === 'ende'); }
+  function fsAnsicht(st) {   // ohne erfasste Startelf: Vorschlag anzeigen (wird erst mit der ersten Änderung übernommen)
+    var s = st.spiel && st.spiel.startelf; if (s) return { st: st, vorschlag: false };
+    var k = JSON.parse(JSON.stringify(st)); M.startelfAusVorschlag(data, k); return { st: k, vorschlag: true };
+  }
+  function fsKarte(st) {
+    var a = fsAnsicht(st), se = a.st.spiel.startelf, f = E.pitchByCode(se.formation), fertig = fsFertig(st), lf = st.spiel && st.spiel.startelf ? M.liveFormation(st, null) : null;
+    var h = '<div class="card fscard" id="fsCard"><h2>Formation &amp; Startelf</h2>' +
+      (fertig ? '<div class="muted">' + (st.status === 'abgeschlossen' ? '🔒 Abgeschlossen' : 'Abgepfiffen') + ' – Änderungen sind möglich (einmalige Rückfrage). Der eingefrorene „Vorschlag damals“ bleibt unverändert; geändert wird die tatsächliche Startelf.</div>' : '') +
+      (fsLaeuft(st) ? '<div class="warnbox">Spiel läuft – Änderungen an der Startelf schreiben die Anfangsaufstellung um, Minuten werden aus dem Spielverlauf neu berechnet. Formationswechsel im Spiel wird als Ereignis eingetragen.</div>' : '') +
+      '<button class="btn sec fmbtn" id="fsForm">Formation' + (lf && lf !== se.formation ? ' (Anpfiff)' : '') + ': ' + esc(f ? f.name : se.formation) + ' ▾</button>' +
+      (lf && lf !== se.formation ? '<div class="muted">Aktuell nach Formationswechsel: <b>' + esc(E.pitchByCode(lf).name) + '</b></div>' : '') +
+      startelfEditor(a.st) +
+      '<div class="muted">' + (a.vorschlag ? 'Noch der aktuelle Vorschlag – mit der ersten Änderung wird er als Startelf übernommen. ' : '') + 'Foto auf eine Position ziehen = tauschen, von der Bank = einsetzen, auf die Bank = Position frei. Antippen = Auswahlliste.</div>' +
+      (st.snapshot ? '<button class="btn small sec" id="fsDamals">Vorschlag damals ansehen</button>' : '') +
+      '<button class="btn small sec" id="fsVor">Neu aus Vorschlag übernehmen</button></div>';
+    return h;
+  }
+  function fsFreigabe(st, weiter) {   // Rückfragen: abgeschlossen/abgepfiffen (einmal je Spieltag), laufendes Spiel (einmal)
+    state.fsFrei = state.fsFrei || {};
+    if (fsFertig(st) && !state.fsFrei[st.id]) {
+      return frage('Abgeschlossenen Spieltag bearbeiten?', 'Formation und Startelf von „' + M.titel(st) + '“ werden geändert. Der eingefrorene Vorschlag bleibt als „Vorschlag damals“ erhalten. Minuten, Statistik, Zusammenfassung und Fair-Play werden neu berechnet. Vorher wird automatisch eine Sicherung angelegt.', 'Bearbeiten', function () { sichern('vor_bearbeiten'); state.fsFrei[st.id] = 1; weiter(); });
+    }
+    if (fsLaeuft(st) && !state.fsFrei['live' + st.id]) {
+      return frage('Startelf nachträglich ändern?', 'Das Spiel läuft bereits. Die Änderung gilt ab Anpfiff – die Einsatzminuten werden aus dem Spielverlauf neu berechnet. Für einen Wechsel jetzt bitte „Wechsel“ verwenden.', 'Startelf ändern', function () { state.fsFrei['live' + st.id] = 1; weiter(); });
+    }
+    weiter();
+  }
+  function fsAendern(st, fn) {   // fn(st) ändert die (ggf. erst angelegte) Startelf
+    fsFreigabe(st, function () {
+      var s = M.spielbericht(st); if (!s.startelf) M.startelfAusVorschlag(data, st);
+      if (fn(st) === false) return;
+      nachEreignis(st); recalc(); keepScroll(render);
+    });
+  }
+  function fsFormation(st) {
+    var a = fsAnsicht(st), akt = fsLaeuft(st) && st.spiel && st.spiel.startelf ? M.liveFormation(st, null) : a.st.spiel.startelf.formation;
+    var gr = st.groesse ? String(st.groesse) : (E.pitchByCode(akt) ? String(E.pitchByCode(akt).size) : null);
+    formationSheet({ groessen: gr ? [gr] : ['7', '9'], aktuell: akt, st: st, onPick: function (v) {
+      if (fsLaeuft(st) && st.spiel && st.spiel.startelf) {
+        var m = jetztMinute(st), f = E.pitchByCode(v);
+        return dialog('Formation ändern', '<p>Ab jetzt (' + m + '. Minute) in <b>' + esc(f.name) + '</b> spielen – oder wurde von Anfang an anders gespielt?</p>', [
+          { t: 'Formationswechsel ab ' + m + '. Minute', f: function () { M.addFormwechsel(st, m, v); nachEreignis(st); recalc(); keepScroll(render); toast('Formationswechsel eingetragen'); } },
+          { t: 'Startformation nachträglich ändern', sek: true, f: function () { fsAendern(st, function (x) { M.setFormation(x, v); }); } },
+          { t: 'Abbrechen', sek: true }]);
+      }
+      fsAendern(st, function (x) { M.setFormation(x, v); });
+    } });
+  }
+  function fsBinden(st) {
+    if (!$('#fsCard')) return;
+    $('#fsForm').addEventListener('click', function () { fsFormation(st); });
+    $('#fsVor').addEventListener('click', function () { frage('Neu aus Vorschlag übernehmen?', 'Die Startelf wird mit der vorgeschlagenen Aufstellung' + (st.snapshot ? ' (Vorschlag damals)' : '') + ' überschrieben.', 'Übernehmen', function () { fsAendern(st, function (x) { M.startelfAusVorschlag(data, x, x.spiel.startelf.formation); }); }); });
+    if ($('#fsDamals')) $('#fsDamals').addEventListener('click', function () { setAktiv(st.id); setTab('aufstellung'); });
+    if ($('#benchAll')) $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
+    function slotSheet(i) {
+      var a = fsAnsicht(st), cur = a.st.spiel.startelf.slots[i], pos = M.startelfListe(a.st)[i].pos;
+      openSheet('<h3>' + pos + ' besetzen</h3>' + pickGrid('slot', kaderIds(st), cur, '<button data-v="" class="leer">– frei –</button>'), function (root) {
+        bindPick(root, 'slot', function (pid) {
+          closeSheet();
+          fsAendern(st, function (x) { var sl = x.spiel.startelf.slots, c = sl[i], j = pid ? sl.indexOf(pid) : -1; if (j >= 0 && j !== i) sl[j] = c; sl[i] = pid; });
+        });
+      });
+    }
+    bindDnD($('#seEd'), function (src, dst) {
+      var probe = JSON.parse(JSON.stringify(fsAnsicht(st).st)); if (!M.startelfDrop(probe, src, dst)) return;
+      fsAendern(st, function (x) { return M.startelfDrop(x, src, dst); });
+    }, function (src) { if (src.charAt(0) === 's') slotSheet(+src.slice(2)); else toast('Auf eine Position ziehen, um einzusetzen'); });
+  }
   function viewSpiel() {
     var st = M.getSpieltag(data, state.stId), s = M.spielbericht(st);
-    if (!s.startelf) { M.startelfAusVorschlag(data, st); commit(); state.prefillToast = true; }
-    var b = M.bericht(data, st), f = s.startelf.formation, L = st.live;
+    if (!s.startelf) { M.startelfAusVorschlag(data, st); commit(); state.prefillToast = true; }   // Spielbericht = tatsächliches Spiel: Startelf aus dem Vorschlag vorbelegen
+    var b = M.bericht(data, st), L = st.live;
     var liveTxt = !L || L.phase === 'vor' ? '▶ Live-Modus: Spiel starten' : (L.phase === 'ende' ? '📄 Spielzusammenfassung' : '⏱ Live-Spiel läuft – öffnen');
     var h = '<button class="btn" id="toLive">' + liveTxt + '</button>' + scoreHtml(st, b, true);
     h += timelineHtml(st, b);
-    h += '<div class="card" id="seCard"><h2>Startelf (tatsächlich gespielt)</h2><button class="btn sec fmbtn" id="fBtn">Formation: ' + esc(E.pitchByCode(f).name) + ' ▾</button>' + startelfEditor(st) +
+    h += fsKarte(st);
       '<div class="muted">Vorbelegt aus der vorgeschlagenen Aufstellung' + (st.snapshot ? ' (eingefroren)' : '') + '. Foto auf eine Position ziehen = tauschen, von der Bank auf eine Position = einsetzen, auf die Bank ziehen = Position frei. Antippen öffnet die Auswahlliste. Wechsel im Spiel bitte als Ereignis eintragen.</div><button class="btn sec" id="reVor">Neu aus Vorschlag übernehmen</button></div>';
     h += minutenHtml(st, b);
     h += '<div class="card"><h2>Gegentore ohne Zeitangabe</h2><div class="row"><span class="grow muted">Nur für Spiele ohne Einzelerfassung</span><button class="btn small sec" id="gtMinus">−</button><button class="btn small sec" id="gtPlus">+</button></div></div>';
@@ -1035,32 +1113,14 @@
     $('#toLive').addEventListener('click', function () { go(st.live && st.live.phase === 'ende' ? 'zusammenfassung' : 'live'); });
     $('#gtMinus').addEventListener('click', function () { upd(function () { if (s.gegentore > s.gegen.length) s.gegentore--; else toast('Gegentor mit Minute bitte im Spielverlauf löschen'); }); });
     $('#gtPlus').addEventListener('click', function () { upd(function () { s.gegentore++; }); });
-    $('#fBtn').addEventListener('click', function () { formationSheet({ groessen: st.groesse ? [String(st.groesse)] : ['7', '9'], aktuell: s.startelf.formation, st: st, onPick: function (v) { upd(function () { M.setFormation(st, v); }); } }); });
-    $('#reVor').addEventListener('click', function () { if (!confirm('Startelf mit dem aktuellen Vorschlag überschreiben?')) return; upd(function () { M.startelfAusVorschlag(data, st, s.startelf.formation); }); });
-    bindTimeline(st); bindNeuKnoepfe(st);
-    function slotSheet(i) {
-      var cur = s.startelf.slots[i], pos = M.startelfListe(st)[i].pos;
-      openSheet('<h3>' + pos + ' besetzen</h3>' + pickGrid('slot', kaderIds(st), cur, '<button data-v="" class="leer">– frei –</button>'), function (root) {
-        bindPick(root, 'slot', function (pid) {
-          upd(function () {
-            var j = pid ? s.startelf.slots.indexOf(pid) : -1;
-            if (j >= 0 && j !== i) s.startelf.slots[j] = cur;
-            s.startelf.slots[i] = pid;
-          });
-          closeSheet();
-        });
-      });
-    }
-    bindDnD($('#seEd'), function (src, dst) { if (M.startelfDrop(st, src, dst)) { nachEreignis(st); keepScroll(render); } },
-      function (src) { if (src.charAt(0) === 's') slotSheet(+src.slice(2)); else toast('Auf eine Position ziehen, um einzusetzen'); });
-    if ($('#benchAll')) $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
+    bindTimeline(st); bindNeuKnoepfe(st); fsBinden(st);
   }
 
   // ---------- Live-Spiel ----------
   function uhrText(sek) { sek = Math.max(0, Math.floor(sek)); var m = Math.floor(sek / 60), s = sek % 60; return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s; }
   var PHASE_TXT = { vor: 'vor dem Anpfiff', h1: '1. Halbzeit', pause: 'Halbzeitpause', h2: '2. Halbzeit', ende: 'Abpfiff' };
   function livePitch(st) {
-    var se = st.spiel.startelf, f = null; E.PITCHES.forEach(function (x) { if (x.code === se.formation) f = x; });
+    var f = E.pitchByCode(M.liveFormation(st, null));
     var auf = M.liveAufstellung(st, null), h = '<div id="liveEd"><div class="pitch edit">' + pitchBg();
     f.slots.forEach(function (sl, i) { var p = auf[i] && auf[i].pid ? pById(auf[i].pid) : null; h += '<div class="spot" style="left:' + sl[1] + '%;top:' + sl[2] + '%" data-drop="s:' + i + '">' + token(p, sl[0], 'data-drag="s:' + i + '" data-drop="s:' + i + '"', istKapitaen(st, p)) + '</div>'; });
     h += '</div>';
@@ -1082,7 +1142,8 @@
     if (L.phase === 'ende') h += '<button class="btn big" id="lvSumm">📄 Spielzusammenfassung</button><button class="btn sec" id="lvWeiter">Abpfiff rückgängig – weiterspielen</button>';
     h += '</div>';
     if (L.phase !== 'vor') h += '<div class="card"><div class="row qa"><button class="btn big" data-neu="tor">⚽ Tor</button><button class="btn big sec" data-neu="gegentor">🥅 Gegentor</button></div><div class="row qa"><button class="btn big" data-neu="wechsel">🔁 Wechsel</button><button class="btn big warn" data-neu="fehler">⚠ Abwehrfehler</button></div><div class="row qa"><button class="btn sec" data-neu="notiz">📝 Notiz</button><button class="btn sec" data-neu="karte">🟨 Karte / Verletzung</button></div><div class="row qa"><button class="btn sec" id="lvGeg">🔎 Gegner-Notiz</button></div></div>';
-    h += '<div class="card"><h2>' + (L.phase === 'vor' ? 'Startelf' : 'Auf dem Platz') + '</h2>' + livePitch(st) + '<div class="muted">' + (L.phase === 'vor' ? 'Startelf vor dem Anpfiff: im Spielbericht ändern (Drag & Drop).' : 'Von der Bank auf eine Position ziehen = Wechsel zur aktuellen Minute, zwei Positionen tauschen = Positionstausch.') + '</div></div>';
+    if (L.phase === 'vor') h += fsKarte(st);
+    else h += '<div class="card"><h2>' + (L.phase === 'vor' ? 'Startelf' : 'Auf dem Platz') + '</h2>' + '<div class="row"><button class="btn small sec" id="lvForm">🔀 Formation: ' + esc(E.pitchByCode(M.liveFormation(st, null)).name) + '</button><button class="btn small sec" id="lvStartelf">✎ Startelf (Anpfiff) ändern</button></div>' + livePitch(st) + '<div class="muted">' + (L.phase === 'vor' ? 'Startelf vor dem Anpfiff: im Spielbericht ändern (Drag & Drop).' : 'Von der Bank auf eine Position ziehen = Wechsel zur aktuellen Minute, zwei Positionen tauschen = Positionstausch.') + '</div></div>';
     h += timelineHtml(st, b);
     return h;
   }
@@ -1098,9 +1159,11 @@
     if ($('#lvStop')) $('#lvStop').addEventListener('click', function () { if (!confirm('Abpfiff? Danach entsteht die Spielzusammenfassung (weiter bearbeitbar).')) return; akt('stop'); go('zusammenfassung'); });
     if ($('#lvWeiter')) $('#lvWeiter').addEventListener('click', function () { akt('weiter'); });
     if ($('#lvSumm')) $('#lvSumm').addEventListener('click', function () { go('zusammenfassung'); });
-    $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
     bindNeuKnoepfe(st); bindTimeline(st);
-    if (L.phase === 'vor') return;
+    if (L.phase === 'vor') { fsBinden(st); return; }
+    $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
+    $('#lvForm').addEventListener('click', function () { fsFormation(st); });
+    $('#lvStartelf').addEventListener('click', function () { state.stZurueckLive = true; go('spiel'); });
     bindDnD($('#liveEd'), function (src, dst) {
       var m = jetztMinute(st), x = M.liveDrop(st, src, dst, m);
       if (!x) { toast('Nicht möglich'); return; }
@@ -1298,8 +1361,8 @@
     if (fehlt) { code = Object.keys(pits).filter(function (c) { return pits[c].size === sz; })[0]; P = pits[code]; }
     var pr = closed && st.snapshot.varianten[sz].paar ? st.snapshot.varianten[sz].paar : paarVon(st, sz);
     var info = closed ? { v: st.snapshot.varianten[sz].v, einsetzbar: st.snapshot.einsetzbar, nicht: st.snapshot.nichtEingeplant } : { v: R.lineups.varianten[sz].v, einsetzbar: R.lineups.einsetzbar, nicht: R.lineups.nichtEingeplant };
-    var h = gegnerInfoKarte(st) + '<div class="card stbar' + (closed ? ' lockcard' : '') + '"><div class="row"><div class="grow"><b>' + esc(M.titel(st)) + '</b><div class="muted">' + (closed ? '🔒 eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) : 'offen – rechnet live mit aktuellen Noten') + '</div></div>' +
-      '<button class="btn small sec" id="stOpen">Spieltag</button><button class="btn small sec" id="stWahl">Wechseln</button></div></div>';
+    var h = gegnerInfoKarte(st) + '<div class="card stbar' + (closed ? ' lockcard' : '') + '"><div class="row"><div class="grow"><b>' + esc(M.titel(st)) + '</b><div class="muted">' + (closed ? '🔒 Vorschlag damals – eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) + ' · tatsächliche Startelf im Spieltag änderbar' : 'offen – rechnet live mit aktuellen Noten') + '</div></div>' +
+      '<button class="btn small sec" id="stOpen">' + (closed ? 'Startelf ändern' : 'Spieltag') + '</button><button class="btn small sec" id="stWahl">Wechseln</button></div></div>';
     h += '<div class="seg" id="szSeg" style="margin-bottom:6px"><button data-v="7" class="' + (sz === '7' ? 'on' : '') + '">7er</button><button data-v="9" class="' + (sz === '9' ? 'on' : '') + '">9er</button></div>';
     var segCodes = pr.slice(); if (segCodes.indexOf(code) < 0) segCodes.push(code);
     h += '<div class="row fmrow"><div class="seg small grow" id="fmSeg">' + segCodes.map(function (c) { var pt = E.pitchByCode(c); return '<button data-v="' + c + '" class="' + (c === code ? 'on' : '') + '">' + pt.kurz + (c === pr[0] ? ' (Abwehr)' : (c === pr[1] ? ' (Angriff)' : '')) + '</button>'; }).join('') + '</div><button class="btn small" id="fmMore">Formationen ▾</button></div>';
