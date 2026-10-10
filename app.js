@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.4';
+  var APP_VERSION = '2.4.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -1027,7 +1027,7 @@
   function bindNeuKnoepfe(st) { $$('[data-neu]').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-neu'), m = jetztMinute(st); if (!E.isNum(m)) m = letzteMinute(st); evSheet(st, t, null, m); }); }); }
 
   // ---------- Wetter zur Spielzeit (ab 2.4; DWD über Bright Sky) ----------
-  var WT = window.PSVWetter, wtLaeuft = {}, wtAnim = null;
+  var WT = window.PSVWetter, wtLaeuft = {};
   function wtCache(id) { try { return JSON.parse(localStorage.getItem('psv_wetter_' + id) || 'null'); } catch (e) { return null; } }
   function wtCacheSetzen(id, c) { try { localStorage.setItem('psv_wetter_' + id, JSON.stringify(c)); } catch (e) { try { delete c.r; localStorage.setItem('psv_wetter_' + id, JSON.stringify(c)); } catch (e2) { } } }
   function wtJetzt() { return window.__wtJetzt ? window.__wtJetzt() : Date.now(); }
@@ -1081,15 +1081,20 @@
     W.forEach(function (w) { h += '<div class="warnbox wt-warn">⚠ ' + esc(w.titel) + ' <span class="muted">(' + WT.hhmm(w.von) + '–' + WT.hhmm(w.bis) + ')</span></div>'; });
     if (S.some(function (x) { return x.gewitter; })) h += '<div class="warnbox wt-warn">⛈ Gewitter möglich – bei Donner Spiel unterbrechen!</div>';
     h += '<div class="wt-std">' + S.map(function (x) {
-      return '<div class="wt-h"><b>' + WT.hhmm(x.t) + '</b><span class="wt-i">' + (WT.ICON[x.icon] || '') + '</span><span>' + WT.zahl(x.temp) + ' °C</span><span class="wt-r">💧 ' + WT.zahl(x.wkt) + ' %' + (x.mm > 0 ? ' · ' + WT.zahl(x.mm, 1) + ' mm' : '') + '</span><span class="muted">💨 ' + WT.zahl(x.wind) + (x.boeen ? ' / ' + WT.zahl(x.boeen) : '') + ' km/h</span></div>';
+      return '<div class="wt-h"><b>' + WT.hhmm(x.t) + '</b><span class="wt-i">' + (WT.ICON[x.icon] || '') + '</span><span>' + WT.zahl(x.temp) + ' °C</span><span class="wt-r">💧 ' + (x.mm || 0).toFixed(1).replace('.', ',') + ' mm · ' + WT.zahl(x.wkt) + ' %</span><span class="muted">💨 ' + WT.zahl(x.wind) + (x.boeen ? ' / ' + WT.zahl(x.boeen) : '') + ' km/h</span></div>';
     }).join('') + '</div>';
     var nc = (c.r ? WT.nowcast(c.r) : []).filter(function (x) { return x.t >= now - 10 * 60000; });
-    if (nc.length && WT.radarAktiv(f, now, ph)) {
-      var max = Math.max(2, Math.max.apply(null, nc.map(function (x) { return x.mmh; })));
-      h += '<div class="wt-nc"><b>' + esc(WT.nowcastText(nc, now)) + '</b><div class="wt-bars">' + nc.map(function (x) { var hh = Math.round(Math.min(1, x.mmh / max) * 44); return '<div class="wt-bar' + (x.t <= now && now < x.t + 300000 ? ' jetzt' : '') + '" title="' + WT.hhmm(x.t) + ' ' + WT.zahl(x.mmh, 1) + ' mm/h"><i style="height:' + (x.mmh >= 0.1 ? Math.max(3, hh) : 0) + 'px;background:rgb(' + (WT.farbe(x.mmh) || [200, 200, 200]).join(',') + ')"></i></div>'; }).join('') + '</div><div class="wt-achse"><span>' + WT.hhmm(nc[0].t) + '</span><span>Regenradar 5-Min.-Schritte</span><span>' + WT.hhmm(nc[nc.length - 1].t) + '</span></div>' +
-        '<div class="wt-karte"><canvas id="wtCanvas" width="180" height="180"></canvas><div class="muted" id="wtFrame"></div></div></div>';
-    }
+    if (nc.length && WT.radarAktiv(f, now, ph)) h += '<div class="wt-nc"><b>' + esc(WT.nowcastText(nc, now)) + '</b>' + wtDiagramm(nc, f, now) + '</div>';
     return h + wtFuss(c);
+  }
+  function wtDiagramm(nc, f, now) {   // feste Skala in mm/h – nie relativ zum Maximum der Daten
+    var H = 96, t0 = nc[0].t, t1 = nc[nc.length - 1].t + 300000, x = function (t) { return ((t - t0) / (t1 - t0) * 100).toFixed(2) + '%'; };
+    var g = WT.SKALA.map(function (v) { var y = WT.skalaY(v) * H; return '<div class="wt-gl" style="bottom:' + y + 'px"><span>' + (v === 10 ? '10+' : WT.zahl(v, 1)) + '</span></div>'; }).join('');
+    var bars = nc.map(function (p) { var hh = p.mmh >= 0.1 ? Math.max(2, Math.round(WT.skalaY(p.mmh) * H)) : 0; return '<i class="wt-b" title="' + WT.hhmm(p.t) + ' ' + WT.zahl(p.mmh, 1) + ' mm/h" style="left:' + x(p.t) + ';width:' + (100 / nc.length).toFixed(2) + '%;height:' + hh + 'px;background:' + (WT.bandFarbe(p.mmh) || 'transparent') + '"></i>'; }).join('');
+    var mark = function (t, cls, txt) { return t >= t0 && t <= t1 ? '<div class="' + cls + '" style="left:' + x(t) + '"><span>' + txt + '</span></div>' : ''; };
+    var ticks = '', s = Math.ceil(t0 / 1800000) * 1800000; for (; s <= t1; s += 1800000) ticks += '<span style="left:' + x(s) + '">' + WT.hhmm(s) + '</span>';
+    return '<div class="wt-dia"><div class="wt-y">mm/h</div><div class="wt-plot" style="height:' + H + 'px">' + g + bars + mark(now, 'wt-jetzt', 'jetzt') + mark(f.anpfiff, 'wt-an', 'Anpfiff ' + WT.hhmm(f.anpfiff)) + mark(f.ende, 'wt-an', 'Ende') + '</div>' +
+      '<div class="wt-x">' + ticks + '</div></div><div class="wt-leg"><span><i style="background:#64b5f6"></i>leicht &lt; 2,5</span><span><i style="background:#1e5bbf"></i>mäßig 2,5–10</span><span><i style="background:#c2185b"></i>stark &gt; 10 mm/h</span></div>';
   }
   function wtFuss(c) {
     return '<div class="muted wt-fuss">' + (c && c.stand ? 'Stand: ' + WT.hhmm(c.stand) + (navigator.onLine === false ? ' · offline' : '') + (c.fehler ? ' · Aktualisierung fehlgeschlagen' : '') + ' · ' : '') + esc(WT.QUELLE) + '</div>';
@@ -1100,22 +1105,7 @@
     if ($('#wtNeu')) $('#wtNeu').addEventListener('click', function () { wtLaden(st, true); });
     ['#wtOrt', '#wtOrt2'].forEach(function (s) { if ($(s)) $(s).addEventListener('click', function (e) { e.preventDefault(); wtOrtSheet(st); }); });
     if ($('#wtZeit')) $('#wtZeit').addEventListener('click', function () { state.stId = st.id; setTab('spieltag'); go('spieltag'); });
-    wtRadarAnimieren(st);
     if (!nurKarte) wtLaden(st);
-  }
-  function wtRadarAnimieren(st) {
-    clearInterval(wtAnim); var cv = $('#wtCanvas'), c = wtCache(st.id); if (!cv || !c || !c.r || !c.r.radar) return;
-    var R = c.r.radar, p = c.r.latlon_position || { x: 0, y: 0 }, g0 = R[0].precipitation_5, hgt = g0.length, wdt = g0[0].length, ctx = cv.getContext('2d'), sx = cv.width / wdt, sy = cv.height / hgt, i = 0;
-    function bild() {
-      if (!document.body.contains(cv)) { clearInterval(wtAnim); return; }
-      var g = R[i].precipitation_5; ctx.fillStyle = '#eef3ee'; ctx.fillRect(0, 0, cv.width, cv.height);
-      for (var y = 0; y < hgt; y++) for (var x = 0; x < wdt; x++) { var col = WT.farbe((g[y][x] || 0) * 0.12); if (col) { ctx.fillStyle = 'rgb(' + col.join(',') + ')'; ctx.fillRect(x * sx, y * sy, Math.ceil(sx), Math.ceil(sy)); } }
-      ctx.strokeStyle = 'rgba(0,0,0,.25)'; [5, 10].forEach(function (km) { ctx.beginPath(); ctx.arc((p.x + 0.5) * sx, (p.y + 0.5) * sy, km * sx, 0, 7); ctx.stroke(); });
-      ctx.fillStyle = '#1b5e20'; ctx.beginPath(); ctx.arc((p.x + 0.5) * sx, (p.y + 0.5) * sy, 5, 0, 7); ctx.fill();
-      var fr = $('#wtFrame'); if (fr) fr.textContent = 'Radar ' + WT.hhmm(Date.parse(R[i].timestamp)) + (Date.parse(R[i].timestamp) > wtJetzt() ? ' (Vorhersage)' : '') + ' · Kreise 5/10 km · ' + (i + 1) + '/' + R.length;
-      i = (i + 1) % R.length;
-    }
-    bild(); wtAnim = setInterval(bild, 500);
   }
   function wtGeocode(q) {   // Adresse → Koordinaten (OpenStreetMap Nominatim, nur auf Knopfdruck; Ersatz: Open-Meteo-Ortssuche)
     return wtHolen('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=de&accept-language=de&q=' + encodeURIComponent(q)).then(function (L) {

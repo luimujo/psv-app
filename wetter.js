@@ -64,7 +64,10 @@
       return { t: Date.parse(x.timestamp), temp: x.temperature, wkt: x.precipitation_probability, mm: x.precipitation, wind: x.wind_speed, boeen: x.wind_gust_speed, bed: x.condition, icon: x.icon, gewitter: GEWITTER.test(x.condition || '') || GEWITTER.test(x.icon || '') };
     }).filter(function (x) { return x.t >= Math.floor((f.treffen) / 3600000) * 3600000 && x.t <= f.ende; });
   }
-  function staerke(mmh) { return mmh < 0.1 ? '' : mmh < 2.5 ? 'leicht' : mmh < 7.6 ? 'mäßig' : 'stark'; }
+  function staerke(mmh) { return mmh < 0.1 ? '' : mmh < 2.5 ? 'leicht' : mmh <= 10 ? 'mäßig' : 'stark'; }   // DWD: leicht < 2,5 · mäßig 2,5–10 · stark > 10 mm/h
+  var SKALA = [0, 1, 2.5, 5, 10];   // feste Achse (mm/h), nicht linear, oben gekappt bei 10+
+  function skalaY(mmh) { if (!(mmh > 0)) return 0; if (mmh >= 10) return 1; for (var i = 1; i < SKALA.length; i++) if (mmh <= SKALA[i]) return (i - 1 + (mmh - SKALA[i - 1]) / (SKALA[i] - SKALA[i - 1])) / (SKALA.length - 1); return 1; }
+  function bandFarbe(mmh) { return mmh < 0.1 ? null : mmh < 2.5 ? '#64b5f6' : mmh <= 10 ? '#1e5bbf' : '#c2185b'; }
   function nowcast(r) {   // Radar am Platz (Maximum 3×3 km um den Platz) je 5 Min., mm/h
     if (!r || !r.radar || !r.radar.length) return [];
     var p = r.latlon_position || { x: 0, y: 0 }, cx = Math.round(p.x), cy = Math.round(p.y);
@@ -79,8 +82,9 @@
     var nass = function (x) { return x.mmh >= 0.1; }, i = L.findIndex ? L.findIndex(nass) : -1;
     if (i < 0) return 'Kein Regen bis ca. ' + hhmm(L[L.length - 1].t);
     var max = 0, j = i; while (j < L.length && nass(L[j])) { max = Math.max(max, L[j].mmh); j++; }
-    if (i === 0) return 'Regen jetzt, ' + staerke(max) + (j < L.length ? ' – endet ca. ' + hhmm(L[j].t) : ' – hält an');
-    return 'Regen ab ca. ' + hhmm(L[i].t) + ', ' + staerke(max);
+    var mm = ' (' + max.toFixed(1).replace('.', ',') + ' mm/h)';
+    if (i === 0) return 'Regen jetzt, ' + staerke(max) + mm + (j < L.length ? ' – endet ca. ' + hhmm(L[j].t) : ' – hält an');
+    return 'Regen ab ca. ' + hhmm(L[i].t) + ', ' + staerke(max) + mm;
   }
   function warnungen(a) { return ((a && a.alerts) || []).map(function (x) { return { titel: x.headline_de || x.event_de || 'Wetterwarnung', stufe: x.severity, von: Date.parse(x.onset), bis: Date.parse(x.expires), text: x.description_de || '' }; }); }
   function relevanteWarnungen(L, f) { return L.filter(function (w) { return !f || (w.bis >= f.treffen && w.von <= f.ende); }); }
@@ -105,5 +109,5 @@
   function farbe(mmh) { for (var i = 0; i < FARBEN.length; i++) if (mmh < FARBEN[i][0]) return i ? FARBEN[i - 1][1] : null; return FARBEN[FARBEN.length - 1][1]; }
   return { API: API, HEIM: HEIM, QUELLE: QUELLE, RADAR_KM: RADAR_KM, berlinMs: berlinMs, hhmm: hhmm, iso: iso, fenster: fenster, ort: ort, phase: phase, radarAktiv: radarAktiv, urls: urls,
     stunden: stunden, nowcast: nowcast, nowcastText: nowcastText, staerke: staerke, warnungen: warnungen, relevanteWarnungen: relevanteWarnungen, abschluss: abschluss, abschlussText: abschlussText,
-    BED: BED, ICON: ICON, zahl: zahl, farbe: farbe };
+    BED: BED, SKALA: SKALA, skalaY: skalaY, bandFarbe: bandFarbe, ICON: ICON, zahl: zahl, farbe: farbe };
 });

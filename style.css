@@ -380,3 +380,12 @@ nav#tabs{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inse
 .wt-achse{display:flex;justify-content:space-between;font-size:11px;color:#777}
 .wt-karte{display:flex;align-items:center;gap:10px;margin-top:8px}.wt-karte canvas{width:180px;height:180px;border-radius:12px;border:1px solid #cfd8cf;image-rendering:pixelated}
 .wt-fuss{font-size:11px;margin-top:6px}.wt-treffer{display:block;width:100%;text-align:left;margin-top:4px}
+/* 2.4.1: feste Regenskala */
+.wt-dia{margin:24px 0 2px 30px;position:relative}.wt-y{position:absolute;left:-30px;top:-14px;font-size:10px;color:#777}
+.wt-plot{position:relative;border-bottom:1px solid #999}
+.wt-gl{position:absolute;left:0;right:0;border-top:1px dashed #d5dcd5}.wt-gl span{position:absolute;left:-30px;top:-7px;width:26px;text-align:right;font-size:10px;color:#666}
+.wt-b{position:absolute;bottom:0;display:block;box-sizing:border-box;border:0 solid #fff;border-width:0 1px;border-radius:2px 2px 0 0}
+.wt-jetzt,.wt-an{position:absolute;top:-4px;bottom:0;border-left:2px solid #1B5E20}.wt-jetzt{border-left:1px dotted #555}
+.wt-an span,.wt-jetzt span{position:absolute;top:-12px;left:2px;font-size:10px;white-space:nowrap;color:#1B5E20;font-weight:600}.wt-jetzt span{color:#555;font-weight:400;top:auto;bottom:2px}
+.wt-x{position:relative;height:14px;font-size:10px;color:#666}.wt-x span{position:absolute;transform:translateX(-50%)}
+.wt-leg{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#555;margin-top:4px}.wt-leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
