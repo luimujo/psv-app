@@ -1,5 +1,5 @@
-/* PSV Wesel-Lackhausen – Service Worker (App-Hülle offline). Version 2.4.1 · 5b7f97e2b3 */
-const CACHE = 'psv-app-2.4.1-5b7f97e2b3';
+/* PSV Wesel-Lackhausen – Service Worker (App-Hülle offline). Version 2.4.2 · 967373e2cd */
+const CACHE = 'psv-app-2.4.2-967373e2cd';
 const SHELL = ['./', './index.html','./style.css','./app.js','./engine.js','./model.js','./data.js','./praes.js','./firebase.js','./cloud-core.js','./sync.js','./xlsx.js','./import.js','./taktik.js','./wetter.js','./pwa.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); });
 self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipWaiting(); });

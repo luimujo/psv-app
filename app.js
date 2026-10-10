@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.4.1';
+  var APP_VERSION = '2.4.2';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -817,7 +817,7 @@
       '<label class="f">Gegnerstärke (für Form und Vorschläge, mild)</label>' + segHtml('dGs', st.gegnerStaerke || '', [['', 'unbekannt'], ['schwach', 'schwach'], ['mittel', 'mittel'], ['stark', 'stark']], 'small') +
       '<label class="ck"><input type="checkbox" id="dOw"' + (st.ohneWertung ? ' checked' : '') + '> Spiel ohne Wertung (z. B. Freundschaftsspiel) – zählt nicht für Bilanz, Form und Vorschläge</label>' +
       '<div class="grid2"><div><label class="f">Spielform</label>' + segHtml('dGr', st.groesse, [['', 'offen'], ['7', '7er'], ['9', '9er']], 'small') + '</div><div><label class="f">Spielzeit (Min.)</label><input type="number" id="dZeit" value="' + esc(st.spielzeit) + '"></div></div>' +
-      '<div class="grid2"><div><label class="f">Anpfiff</label><input type="time" id="dUhr" value="' + esc(st.uhrzeit || '') + '"></div><div><label class="f">Treffen</label><input type="time" id="dTreff" value="' + esc(st.treffen || '') + '"></div></div></div>';
+      '<div class="grid2"><div><label class="f">Anpfiff</label><input type="time" id="dUhr" value="' + esc(st.uhrzeit || '') + '"></div><div><label class="f">Treffen</label><input type="time" id="dTreff" value="' + esc(st.treffen || '') + '"></div></div>' + (function () { var o = WT ? wtOrt(st) : null, g = M.gegnerVon(data, st); if (!o && st.ort === 'Auswärts' && g && g.platz) o = { adresse: g.platz, name: g.platz }; return o ? '<label class="f">Spielort</label><div class="d-ort">' + ortLink(o) + '</div>' : ''; })() + '</div>';
     h += '<div class="card ' + (closed ? 'lockcard' : '') + '"><h2>' + (closed ? '🔒 Abgeschlossen' : 'Status: offen') + '</h2>' +
       (closed ? '<div class="muted">Vorschlag (Aufstellung und Auswechseloptionen) eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) + '. Spätere Notenänderungen ändern ihn nicht.</div><button class="btn sec" id="dOpen">Wieder öffnen</button>'
         : '<div class="muted">Der Vorschlag rechnet live mit den aktuellen Noten und Zusagen. „Abschließen“ friert ihn für diesen Spieltag ein.</div><button class="btn" id="dClose">Spieltag abschließen</button>') +
@@ -1070,7 +1070,7 @@
   function wtInhalt(st) {
     var f = WT.fenster(st), now = wtJetzt(), ph = WT.phase(f, now, st.live && st.live.phase), o = wtOrt(st), c = wtCache(st.id);
     var h = '<div class="row"><h2 class="grow" style="margin:0">🌦 Wetter zur Spielzeit</h2>' + (o && f ? '<button class="btn small sec" id="wtNeu" aria-label="Aktualisieren">⟳</button>' : '') + '</div>';
-    h += '<div class="muted wt-ort">📍 ' + (o ? esc(o.name || (o.lat.toFixed(4) + ', ' + o.lon.toFixed(4))) : 'Spielort fehlt') + ' <a href="#" id="wtOrt">ändern</a></div>';
+    h += '<div class="muted wt-ort">' + (o ? ortLink(o, o.name || (o.lat.toFixed(4) + ', ' + o.lon.toFixed(4))) : '📍 Spielort fehlt') + ' <a href="#" id="wtOrt">ändern</a></div>';
     if (!f) return h + '<div class="muted">Anpfiff-Zeit im Spieltag eintragen, dann erscheint hier das Wetter von Treffen bis Spielende.</div>' + (state.sub !== 'spieltag' ? '<button class="btn small sec" id="wtZeit">Anpfiff eintragen</button>' : '');
     if (!o) return h + '<div class="muted">Auswärtsspiel: bitte den Platz des Gegners suchen oder Koordinaten eingeben.</div><button class="btn small" id="wtOrt2">Spielort festlegen</button>';
     h += '<div class="muted">Treffen ' + WT.hhmm(f.treffen) + ' · Anpfiff ' + WT.hhmm(f.anpfiff) + ' · Ende ca. ' + WT.hhmm(f.ende) + '</div>';
@@ -1096,6 +1096,33 @@
     return '<div class="wt-dia"><div class="wt-y">mm/h</div><div class="wt-plot" style="height:' + H + 'px">' + g + bars + mark(now, 'wt-jetzt', 'jetzt') + mark(f.anpfiff, 'wt-an', 'Anpfiff ' + WT.hhmm(f.anpfiff)) + mark(f.ende, 'wt-an', 'Ende') + '</div>' +
       '<div class="wt-x">' + ticks + '</div></div><div class="wt-leg"><span><i style="background:#64b5f6"></i>leicht &lt; 2,5</span><span><i style="background:#1e5bbf"></i>mäßig 2,5–10</span><span><i style="background:#c2185b"></i>stark &gt; 10 mm/h</span></div>';
   }
+  // ---------- Karten-Links (2.4.2): Google Maps / Route / Apple Karten ----------
+  function mapsUrl(o, art) {
+    var q = o && isFinite(o.lat) ? (+o.lat).toFixed(5) + ',' + (+o.lon).toFixed(5) : (o && o.adresse) || '';
+    if (art === 'apple') return 'https://maps.apple.com/?' + (o && isFinite(o.lat) ? 'll=' + q + '&q=' + encodeURIComponent(o.name || 'Spielort') : 'q=' + encodeURIComponent(q));
+    return art === 'dir' || art === 'nav' ? 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(q) + '&travelmode=driving&dir_action=navigate' : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+  }
+  function navigieren(o) {   // Hauptaktion: Navigation direkt starten
+    var b = window.AndroidBridge, url = mapsUrl(o, 'nav');
+    if (b && typeof b.navigiere === 'function') b.navigiere(o && isFinite(o.lat) ? (+o.lat).toFixed(5) + ',' + (+o.lon).toFixed(5) : (o && o.adresse) || '', url); else extern(url);
+  }
+  function extern(url) { var b = window.AndroidBridge; if (b && typeof b.oeffneExtern === 'function') b.oeffneExtern(url); else window.open(url, '_blank', 'noopener'); }
+  function ortLink(o, label) {   // o = {lat, lon, name} oder {adresse}
+    if (!o || !(isFinite(o.lat) || o.adresse)) return '';
+    var d = ' data-lat="' + esc(isFinite(o.lat) ? o.lat : '') + '" data-lon="' + esc(isFinite(o.lon) ? o.lon : '') + '" data-adr="' + esc(o.adresse || '') + '" data-name="' + esc(o.name || label || '') + '"';
+    return '<span class="maprow"><a href="#" class="maplink" data-maps="nav"' + d + ' title="Navigation starten (lange drücken: weitere Optionen)">📍 <u>' + esc(label || o.name || o.adresse) + '</u></a> <button class="btn small sec maproute" data-maps="search"' + d + '>🗺 Karte</button></span>';
+  }
+  function mapsZiel(el) { var la = el.getAttribute('data-lat'); return la !== '' && la !== null ? { lat: +la, lon: +el.getAttribute('data-lon'), name: el.getAttribute('data-name') } : { adresse: el.getAttribute('data-adr'), name: el.getAttribute('data-name') }; }
+  function mapsMenue(o) {
+    openSheet('<h3>' + esc(o.name || o.adresse || 'Spielort') + '</h3><button class="btn sec" data-mm="nav">🚗 Navigation starten</button><button class="btn sec" data-mm="search">🗺 Karte anzeigen (Google Maps)</button><button class="btn sec" data-mm="apple">🍎 In Apple Karten öffnen</button>', function (root) {
+      $$('[data-mm]', root).forEach(function (b) { b.addEventListener('click', function () { closeSheet(); var a = b.getAttribute('data-mm'); if (a === 'nav') navigieren(o); else extern(mapsUrl(o, a)); }); });
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('[data-maps]'); if (!el) return;
+    e.preventDefault(); e.stopPropagation(); var a = el.getAttribute('data-maps'), o = mapsZiel(el); if (a === 'nav') navigieren(o); else extern(mapsUrl(o, a));
+  }, true);
+  document.addEventListener('contextmenu', function (e) { var el = e.target.closest && e.target.closest('.maplink'); if (!el) return; e.preventDefault(); mapsMenue(mapsZiel(el)); });
   function wtFuss(c) {
     return '<div class="muted wt-fuss">' + (c && c.stand ? 'Stand: ' + WT.hhmm(c.stand) + (navigator.onLine === false ? ' · offline' : '') + (c.fehler ? ' · Aktualisierung fehlgeschlagen' : '') + ' · ' : '') + esc(WT.QUELLE) + '</div>';
   }
@@ -1676,6 +1703,7 @@
     h += '<div class="card"><h2>Stammdaten</h2><label class="f">Name</label><input type="text" id="gName" value="' + esc(g.name) + '">' +
       '<div class="grid2"><div><label class="f">Altersklasse</label>' + sel('gAk', g.altersklasse, [['', '–']].concat(M.KLASSEN)) + '</div><div><label class="f">Farben (Trikot)</label><input type="text" id="gFarb" value="' + esc(g.farben) + '" placeholder="z. B. rot/weiß"></div></div>' +
       '<label class="f">Platz / Adresse</label><input type="text" id="gPlatz" value="' + esc(g.platz) + '" placeholder="z. B. Kunstrasen, Sportplatzstr. 1">' +
+      '<div class="g-ort">' + (g.koord ? ortLink({ lat: g.koord.lat, lon: g.koord.lon, name: g.koord.name }, g.platz || g.koord.name) : g.platz ? ortLink({ adresse: g.platz, name: g.platz }) : '') + '</div>' +
       (g.alias.length ? '<div class="muted" style="margin-top:6px">Weitere Schreibweisen: ' + esc(g.alias.join(', ')) + '</div>' : '') +
       (andere.length ? '<label class="f">Mit anderem Gegner zusammenführen</label>' + sel('gMerge', '', [['', '– wählen –']].concat(andere.map(function (x) { return [x.id, x.name]; }))) : '') +
       (sts.length ? '' : '<button class="btn warn" id="gDel">Gegner löschen</button>') + '</div>';
