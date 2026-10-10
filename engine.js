@@ -384,7 +384,7 @@
 
   function compute(data) {
     var evals = data.players.map(function (p) { return playerEval(p, data.skala); });
-    // Ranking (Übersicht M22:R39)
+    // Ranking
     var keyed = data.players.map(function (p, i) { var g = evals[i].gesamt; return { i: i, key: (!p.name ? -2 : (isNum(g) ? g : -1)) - (i + 5) / 100000 }; });
     keyed.sort(function (a, b) { return b.key - a.key; });
     var ranking = keyed.filter(function (x) { return data.players[x.i].name; }).map(function (x) {
@@ -396,13 +396,13 @@
     return { evals: evals, ranking: ranking, lineups: L };
   }
 
-  function noteColor(g) {   // Farbstufen wie Übersicht M5:M20
+  function noteColor(g) {   // Farbstufen Gesamtnote
     if (!isNum(g)) return null;
     if (g >= 4.5) return '#1B5E20'; if (g >= 4.25) return '#2E7D32'; if (g >= 4.0) return '#43A047'; if (g >= 3.75) return '#7CB342';
     if (g >= 3.5) return '#C0CA33'; if (g >= 3.25) return '#FDD835'; if (g >= 3.0) return '#FFB300'; if (g >= 2.75) return '#FB8C00';
     if (g >= 2.5) return '#F4511E'; if (g >= 2.0) return '#E53935'; return '#B71C1C';
   }
-  function scaleColor(v) {  // Farbskala Übersicht H5:L20: 1 rot – 3 gelb – 5 grün
+  function scaleColor(v) {  // Farbskala: 1 rot – 3 gelb – 5 grün
     if (!isNum(v)) return null;
     var a = [0xEF, 0x9A, 0x9A], b = [0xFF, 0xF5, 0x9D], c = [0x66, 0xBB, 0x6A], t, x, y;
     if (v <= 3) { t = Math.max(0, (v - 1) / 2); x = a; y = b; } else { t = Math.min(1, (v - 3) / 2); x = b; y = c; }
