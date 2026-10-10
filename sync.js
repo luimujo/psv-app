@@ -438,6 +438,7 @@
     if (!entsperrt) return;
     if (Object.keys(wartend).length && !H.beschaeftigt()) verarbeiteWartende();
     if (bereit && !H.liveAktiv()) pushen();
+    taeglichPruefen();
     setStatus(st.s === 'fehler' ? 'fehler' : 'ok', st.s === 'fehler' ? st.text : '');
   }
 
@@ -448,7 +449,7 @@
       if (H.beschaeftigt() && bereit) return;   // während Eingabe/Live-Modus später übernehmen
       var keys = Object.keys(wartend); wartend = {}; var geaendert = false;
       for (var i = 0; i < keys.length; i++) { try { if (await remoteAnwenden(keys[i])) geaendert = true; } catch (e) { console.warn('Sync', keys[i], e); } }
-      if (geaendert) { H.setzeDaten(C.zusammensetzen(secs), true); cacheSpeichernBald(); }
+      if (geaendert) { H.setzeDaten(C.zusammensetzen(secs), true); cacheSpeichernBald(); wiederherstellungMelden(); }
     });
     return verarbeitet;
   }
@@ -589,6 +590,7 @@
   }
   async function hochladen() {
     var L = hatLegacy(); if (!L) return;
+    if (Object.keys(secs).length) await sicherung('vor_hochladen').catch(function () { });
     H.setzeDaten(L); H.speichern();          // App normalisiert; speichern → lokalGeaendert
     await abgleich();
     Object.keys(hashes).forEach(function (k) { lc[k] = jetzt() + 1000; });
@@ -767,8 +769,168 @@
       .catch(function (e) { if (e.code === 'permission-denied') keinZugriff(); });
   }
 
+
+  // ---------- Sicherungen / Versionsverlauf (ab 2.3) ----------
+  // teams/{id}/snapshots/{sid} (Metadaten im Klartext: Zeit, Autor, Grund, Größe, App-Version – keine Kinderdaten)
+  //   …/snapshots/{sid}/chunks/{n} (Chiffretext), teams/{id}/snapfotos/{hash} (Fotos, je Hash nur einmal)
+  var SN_MAX = T.snapMax || 30, SN_WOCHEN = 12, snKette = Promise.resolve(), snLetzte = null, snFotoBekannt = {};
+  function snCol() { return F.collection(db, 'teams', team.id, 'snapshots'); }
+  function snRef(sid) { return F.doc(db, 'teams', team.id, 'snapshots', sid); }
+  function snChunk(sid, i) { return F.doc(db, 'teams', team.id, 'snapshots', sid, 'chunks', String(i)); }
+  function snFoto(h) { return F.doc(db, 'teams', team.id, 'snapfotos', h); }
+  function berlinTag(t) { return new Date(t).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }); }
+  function berlinZeit(t) { return t ? new Date(t).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' Uhr' : 'wird gespeichert…'; }
+  function snLetzteHolen() { if (!team) return null; return lsJSON('psv_snap_' + team.id) || {}; }
+  function sicherung(grund, label) {   // Stand SOFORT festhalten (vor der Änderung), Übertragung danach
+    if (!entsperrt || !team || !key || !user) return Promise.resolve(null);
+    var d = JSON.parse(JSON.stringify(H.daten())), tid = team.id;
+    var p = snKette.then(function () { return snSchreiben(d, grund || 'manuell', label || '', tid); });
+    snKette = p.catch(function () { });
+    return p;
+  }
+  async function snSchreiben(d, grund, label, tid) {
+    if (!team || team.id !== tid) return null;
+    var pk = await C.sicherungPacken(C.aufteilen(d)), sid = F.doc(snCol()).id, dh = await C.hash(pk.inhalt);
+    var b = F.writeBatch(db), neuFotos = 0, fh = Object.keys(pk.fotos);
+    for (var i = 0; i < fh.length; i++) {   // Fotos nur, wenn dieser Stand noch nicht in der Cloud liegt
+      var h = fh[i]; if (snFotoBekannt[h]) continue;
+      var da = false; try { da = (await mitTimeout(F.getDoc(snFoto(h)), 8000, 'Foto prüfen')).exists(); } catch (e) { }
+      if (!da) { var ef = await C.encJSON(key, pk.fotos[h], team.id + '/snapfoto/' + h); b.set(snFoto(h), { iv: ef.iv, ct: ef.ct, by: user.uid, createdAt: F.serverTimestamp() }); neuFotos += ef.ct.length; }
+      snFotoBekannt[h] = 1;
+    }
+    var e = await C.encJSON(key, { format: 'psv-snap-1', secs: pk.inhalt, appVersion: H.version ? H.version() : '' }, team.id + '/snap/' + sid), teile = C.stuecke(e.ct);
+    teile.forEach(function (t, i) { b.set(snChunk(sid, i), { iv: e.iv, ct: t, part: i, by: user.uid }); });
+    var m = { by: user.uid, grund: C.GRUENDE[grund] ? grund : 'manuell', groesse: e.ct.length + neuFotos, appVersion: String(H.version ? H.version() : '').slice(0, 20), parts: teile.length, iv: e.iv, fotos: fh, v: 1, createdAt: F.serverTimestamp() };
+    if (label) { var el = await C.encJSON(key, String(label).slice(0, 200), team.id + '/snaplabel/' + sid); m.labelIv = el.iv; m.labelCt = el.ct; }
+    b.set(snRef(sid), m);
+    var pc = b.commit();
+    try { await mitTimeout(pc, NETZ_MS, 'Sicherung speichern'); }
+    catch (te) { if (te.code !== 'psv/timeout') throw te; pc.catch(function () { }); }   // offline: bleibt in der Warteschlange
+    var alt = lsJSON('psv_snap_' + tid) || {}; lsSet('psv_snap_' + tid, JSON.stringify({ tag: grund === 'taeglich' ? berlinTag(jetzt()) : alt.tag, hash: dh }));
+    snAufraeumen().catch(function (e2) { console.warn('Sicherungen aufräumen', e2); });
+    return sid;
+  }
+  var snTagLaeuft = false;
+  async function taeglichPruefen() {   // einmal pro Tag beim ersten Öffnen/Ändern, nur wenn sich etwas geändert hat
+    if (snTagLaeuft || !entsperrt || !bereit || !serverAktuell || !team || !Object.keys(secs).length) return 'nicht bereit';
+    var l = snLetzteHolen(), heute = berlinTag(jetzt()); if (l.tag === heute) return 'heute schon';
+    snTagLaeuft = true;
+    try {
+      var h = await C.hash((await C.sicherungPacken(secs)).inhalt);
+      if (h === l.hash) { lsSet('psv_snap_' + team.id, JSON.stringify({ tag: heute, hash: h })); return 'unverändert'; }
+      await sicherung('taeglich'); return 'gesichert';
+    } catch (e) { console.warn('Tägliche Sicherung', e); } finally { snTagLaeuft = false; }
+  }
+  async function snListe() {
+    var q = await mitTimeout(F.getDocs(snCol()), NETZ_MS, 'Sicherungen laden'), L = [];
+    for (var i = 0; i < q.docs.length; i++) {
+      var x = q.docs[i].data(), o = { id: q.docs[i].id, t: ms(x.createdAt), by: x.by, grund: x.grund, groesse: x.groesse || 0, appVersion: x.appVersion || '', parts: x.parts || 1, iv: x.iv, fotos: x.fotos || [], label: '' };
+      if (x.labelCt) { try { o.label = await C.decJSON(key, { iv: x.labelIv, ct: x.labelCt }, team.id + '/snaplabel/' + o.id); } catch (e) { } }
+      L.push(o);
+    }
+    return L.sort(function (a, b) { return (b.t || 9e15) - (a.t || 9e15); });
+  }
+  async function snAufraeumen() {
+    var L = await snListe(), r = C.sicherungAufbewahren(L, jetzt(), SN_MAX, SN_WOCHEN), owner = istOwner();
+    var weg = L.filter(function (x) { return r.loeschen.indexOf(x.id) >= 0 && (owner || x.by === user.uid); });
+    for (var i = 0; i < weg.length; i++) await snLoeschenDocs(weg[i]);
+    if (owner && weg.length) {   // nicht mehr benutzte Fotos entfernen
+      var benutzt = {}; L.filter(function (x) { return weg.indexOf(x) < 0; }).forEach(function (x) { x.fotos.forEach(function (h) { benutzt[h] = 1; }); });
+      var fq = await F.getDocs(F.collection(db, 'teams', team.id, 'snapfotos')), b = F.writeBatch(db), n = 0;
+      fq.docs.forEach(function (d) { if (!benutzt[d.id]) { b.delete(d.ref); delete snFotoBekannt[d.id]; n++; } });
+      if (n) await b.commit();
+    }
+    return weg.length;
+  }
+  async function snLoeschenDocs(x) {
+    var b = F.writeBatch(db); for (var i = 0; i < (x.parts || 1); i++) b.delete(snChunk(x.id, i)); b.delete(snRef(x.id)); await mitTimeout(b.commit(), NETZ_MS, 'Sicherung löschen');
+  }
+  async function snLaden(x) {   // → vollständige Daten (Fotos aus dem Fotospeicher, fehlende = aktuelles Foto)
+    var ct = '';
+    for (var i = 0; i < x.parts; i++) { var c = await mitTimeout(F.getDoc(snChunk(x.id, i)), NETZ_MS, 'Sicherung laden'); if (!c.exists()) throw new Error('Sicherung unvollständig (Teil ' + (i + 1) + ' fehlt)'); ct += c.data().ct; }
+    var o = await C.decJSON(key, { iv: x.iv, ct: ct }, team.id + '/snap/' + x.id), fotos = {};
+    for (var j = 0; j < x.fotos.length; j++) {
+      try { var f = await mitTimeout(F.getDoc(snFoto(x.fotos[j])), NETZ_MS, 'Foto laden'); if (f.exists()) fotos[x.fotos[j]] = await C.decJSON(key, f.data(), team.id + '/snapfoto/' + x.fotos[j]); } catch (e) { }
+    }
+    var s = C.sicherungEntpacken(o.secs, fotos);
+    Object.keys(o.secs).forEach(function (k) { if (k.indexOf('foto_') === 0 && !s[k] && secs[k]) s[k] = secs[k]; });
+    return C.zusammensetzen(s);
+  }
+  async function wiederherstellen(x) {
+    var d = await snLaden(x);
+    await sicherung('vor_wiederherstellen');
+    d.wiederhergestellt = { zeit: jetzt(), von: (team.namen && team.namen[user.uid]) || user.email || '', stand: x.t || 0 };
+    H.setzeDaten(d); H.speichern();
+    await abgleich();
+    Object.keys(hashes).forEach(function (k) { lc[k] = jetzt() + 1000; });
+    pushen();
+    return d;
+  }
+  var snGesehen = null;
+  function wiederherstellungMelden() {   // anderes Gerät hat einen alten Stand zurückgeholt → Hinweis
+    var w = secs.kern && secs.kern.wiederhergestellt; if (!w || !w.zeit) return;
+    if (snGesehen === null) { snGesehen = lsGet('psv_snap_gesehen') || ''; }
+    if (String(w.zeit) === snGesehen) return;
+    snGesehen = String(w.zeit); lsSet('psv_snap_gesehen', snGesehen);
+    if (H.hinweis) H.hinweis('Daten wiederhergestellt', 'Die Teamdaten wurden' + (w.von ? ' von ' + w.von : '') + ' auf den Stand vom ' + berlinZeit(w.stand) + ' zurückgesetzt.');
+    else toast('Daten auf Stand vom ' + berlinZeit(w.stand) + ' zurückgesetzt');
+  }
+  function kb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function sicherungenView() {
+    if (!entsperrt || !team) return '<div class="card"><h2>Sicherungen</h2><div class="muted">Sicherungen gibt es nur mit Cloud-Team. Lokal: „Exportieren“ unter Mehr.</div></div>';
+    return '<div class="card"><h2>Jetzt sichern</h2><div class="muted">Verschlüsselte Kopie aller Teamdaten in der Cloud. Automatisch: täglich, vor Live-Spiel, Import, Löschen und Wiederherstellen.</div>' +
+      '<label class="f">Bezeichnung (optional)</label><input type="text" id="snLabel" maxlength="80" placeholder="z. B. vor Saisonstart">' +
+      '<button class="btn" id="snJetzt">Jetzt sichern</button><div id="snMsg" class="cl-msg hidden"></div></div>' +
+      '<div class="card"><h2>Gespeicherte Stände</h2><div id="snInfo" class="muted">Wird geladen…</div><div id="snListe"></div></div>';
+  }
+  function alle(x) { return Array.prototype.slice.call(document.querySelectorAll(x)); }
+  var snCache = [];
+  function sicherungenBind() {
+    if (!$('#snJetzt')) return;
+    $('#snJetzt').addEventListener('click', function () {
+      var b = this; busy(b, true, 'Wird gesichert…');
+      sicherung('manuell', $('#snLabel').value.trim()).then(function () { busy(b, false); $('#snLabel').value = ''; toast('Gesichert ✓'); snAnzeigen(); })
+        .catch(function (e) { busy(b, false); meldung('#snMsg', fehlerText(e)); });
+    });
+    snAnzeigen();
+  }
+  function snAnzeigen() {
+    snListe().then(function (L) {
+      snCache = L; if (!$('#snListe')) return;
+      var summe = L.reduce(function (a, x) { return a + x.groesse; }, 0);
+      $('#snInfo').innerHTML = L.length + ' Sicherung' + (L.length === 1 ? '' : 'en') + ' · zusammen ca. ' + kb(summe) + ' (kostenloser Firestore-Speicher: 1 GB – reicht bei weitem). Aufbewahrt werden die letzten 30 und für 12 Wochen je eine pro Woche.';
+      $('#snListe').innerHTML = L.length ? L.map(function (x, i) {
+        var autor = (team.namen && team.namen[x.by]) || (x.by === user.uid ? 'du' : 'Co-Trainer');
+        return '<div class="sn-row"><div><b>' + esc(berlinZeit(x.t)) + '</b> · ' + esc(C.grundText(x.grund)) + (x.label ? ' – „' + esc(x.label) + '“' : '') +
+          '<div class="muted">von ' + esc(autor) + ' · ' + kb(x.groesse) + (x.appVersion ? ' · App ' + esc(x.appVersion) : '') + '</div><div class="muted sn-vor" id="snV' + i + '"></div></div>' +
+          '<div class="sn-kn"><button class="btn small sec" data-snv="' + i + '">Vorschau</button><button class="btn small" data-snw="' + i + '">Wiederherstellen</button><button class="btn small sec" data-sne="' + i + '">Als Datei exportieren</button>' +
+          (istOwner() ? '<button class="btn small warn" data-snd="' + i + '">Löschen</button>' : '') + '</div></div>';
+      }).join('') : '<div class="muted">Noch keine Sicherung.</div>';
+      alle('[data-snv]').forEach(function (b) { b.addEventListener('click', function () {
+        var i = +b.getAttribute('data-snv'), el = $('#snV' + i); el.textContent = 'Wird geladen…';
+        snLaden(snCache[i]).then(function (d) { var z = C.sicherungZaehlen(d); el.textContent = z.spieler + ' Spieler' + (z.ehemalige ? ' (+' + z.ehemalige + ' ehemalige)' : '') + ' · ' + z.spieltage + ' Spieltage · ' + z.tafeln + ' Taktiktafeln · ' + z.fotos + ' Fotos'; })
+          .catch(function (e) { el.textContent = fehlerText(e); });
+      }); });
+      alle('[data-snw]').forEach(function (b) { b.addEventListener('click', function () {
+        var x = snCache[+b.getAttribute('data-snw')];
+        if (!confirm('Stand vom ' + berlinZeit(x.t) + ' wiederherstellen?\n\nAlle aktuellen Teamdaten werden ersetzt – auf allen Geräten des Teams. Der jetzige Stand wird vorher automatisch gesichert.')) return;
+        busy(b, true, 'Wird wiederhergestellt…');
+        wiederherstellen(x).then(function () { toast('Wiederhergestellt ✓ – wird an alle Geräte übertragen'); }).catch(function (e) { busy(b, false); alert('Wiederherstellen fehlgeschlagen: ' + fehlerText(e)); });
+      }); });
+      alle('[data-sne]').forEach(function (b) { b.addEventListener('click', function () {
+        var x = snCache[+b.getAttribute('data-sne')]; busy(b, true, 'Wird geladen…');
+        snLaden(x).then(function (d) { busy(b, false); d.appVersion = x.appVersion; H.exportiereText(JSON.stringify(d, null, 1), 'Sicherung_' + berlinTag(x.t || jetzt())); })
+          .catch(function (e) { busy(b, false); alert(fehlerText(e)); });
+      }); });
+      alle('[data-snd]').forEach(function (b) { b.addEventListener('click', function () {
+        var x = snCache[+b.getAttribute('data-snd')]; if (!confirm('Sicherung vom ' + berlinZeit(x.t) + ' endgültig löschen?')) return;
+        snLoeschenDocs(x).then(snAnzeigen).catch(function (e) { alert(fehlerText(e)); });
+      }); });
+    }).catch(function (e) { if ($('#snInfo')) $('#snInfo').textContent = fehlerText(e); });
+  }
+
   window.PSVCloud = { start: start, modus: modus, aktiv: function () { return modus() === 'cloud'; }, entsperrt: function () { return entsperrt; },
     lokalGeaendert: lokalGeaendert, statusInfo: statusInfo, view: view, bind: bind, datenschutzHtml: datenschutzHtml, fehlerText: fehlerText,
-    zeigeHochladen: zeigeHochladen, _cloudPruefungZuruecksetzen: function () { cloudOk = false; }, allesUebertragen: allesUebertragen, anfragenAnzahl: function () { return anfragen.length; },
+    zeigeHochladen: zeigeHochladen, sicherung: sicherung, sicherungenView: sicherungenView, sicherungenBind: sicherungenBind, _sn: { liste: function () { return snListe(); }, laden: snLaden, wiederherstellen: wiederherstellen, aufraeumen: snAufraeumen, taeglich: taeglichPruefen, kette: function () { return snKette; } }, _cloudPruefungZuruecksetzen: function () { cloudOk = false; }, allesUebertragen: allesUebertragen, anfragenAnzahl: function () { return anfragen.length; },
     _intern: function () { return { secs: secs, meta: meta, hashes: hashes, lc: lc, team: team, user: user, konflikte: konflikte, inflight: inflight, bereit: bereit, remote: remote }; } };
 })();

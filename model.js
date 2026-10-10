@@ -927,7 +927,7 @@
       (z.fehler.length ? '<h2>Abwehrfehler</h2>' + tab(['Spieler', 'Anzahl'], z.fehler.map(function (f) { return [f.name, f.n]; })) : '') +
       (z.notizen.length ? '<h2>Notizen</h2>' + tab(['Min.', 'Notiz'], z.notizen.map(function (n) { return [minTxt(n.minute), n.text]; })) : '') +
       '<h2>Einsatzminuten</h2>' + tab(['Spieler', 'Minuten'], z.minuten.map(function (m) { return [m.name, m.min + ' / ' + z.spielzeit]; })) +
-      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.2</p></body></html>';
+      '<p class="mu" style="margin-top:24px;font-size:11px">Erstellt mit PSV Wesel-Lackhausen · Aufstellung 2.3</p></body></html>';
   }
   var api = { DATA_VERSION: DATA_VERSION, KRIT_FELD: KRIT_FELD, KRIT_TW: KRIT_TW, FORM_RECENCY: FORM_RECENCY, STANDARD_SPIELZEIT: STANDARD_SPIELZEIT,
     VORSCHLAG_MIN_SPIELE: VORSCHLAG_MIN_SPIELE, VORSCHLAG_SCHWELLE: VORSCHLAG_SCHWELLE,

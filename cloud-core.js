@@ -100,6 +100,37 @@
     if (k.indexOf('tk_') === 0) return 'Taktiktafel';
     return k;
   }
+
+  // ---------- Sicherungen (ab 2.3) ----------
+  var GRUENDE = { taeglich: 'Tägliche Sicherung', manuell: 'Manuell gesichert', vor_live: 'Vor Live-Spiel', vor_import: 'Vor SpielerPlus-Import', vor_json: 'Vor Datei-Import',
+    vor_archiv: 'Vor Entfernen eines Spielers', vor_st_loeschen: 'Vor Löschen eines Spieltags', vor_hochladen: 'Vor Hochladen lokaler Daten', vor_wiederherstellen: 'Vor Wiederherstellung' };
+  function grundText(g) { return GRUENDE[g] || 'Sicherung'; }
+  // Fotos aus den Abschnitten lösen: foto_<id> → {ref: hash}; Fotos selbst nur einmal je Hash speichern
+  async function sicherungPacken(secs) {
+    var inhalt = {}, fotos = {};
+    for (var k in secs) {
+      if (k.indexOf('foto_') === 0 && secs[k] && secs[k].foto) { var h = (await hash({ f: secs[k].foto })).replace(/[^A-Za-z0-9]/g, '').slice(0, 24); fotos[h] = secs[k]; inhalt[k] = { pid: secs[k].pid, ref: h }; }
+      else inhalt[k] = secs[k];
+    }
+    return { inhalt: inhalt, fotos: fotos };
+  }
+  function sicherungEntpacken(inhalt, fotos) {   // fotos: {hash: {pid, foto}}; fehlende Fotos → Abschnitt entfällt (aktuelles Foto bleibt)
+    var s = {};
+    Object.keys(inhalt).forEach(function (k) { var v = inhalt[k]; if (k.indexOf('foto_') === 0 && v && v.ref) { if (fotos[v.ref]) s[k] = fotos[v.ref]; } else s[k] = v; });
+    return s;
+  }
+  function sicherungZaehlen(d) {
+    return { spieler: (d.players || []).filter(function (p) { return p.name && !p.archiviert; }).length, ehemalige: (d.players || []).filter(function (p) { return p.name && p.archiviert; }).length,
+      spieltage: (d.spieltage || []).length, tafeln: (d.taktiken || []).length, fotos: (d.players || []).filter(function (p) { return p.foto; }).length };
+  }
+  // Aufbewahrung: die neuesten 30 + je Woche (12 Wochen) die neueste
+  function sicherungAufbewahren(liste, jetztMs, n, wochen) {
+    n = n || 30; wochen = wochen || 12; var W = 7 * 864e5;
+    var L = liste.slice().sort(function (a, b) { return b.t - a.t; }), keep = {}, wk = {};
+    L.slice(0, n).forEach(function (x) { keep[x.id] = 1; });
+    L.forEach(function (x) { var w = Math.floor((jetztMs - x.t) / W); if (x.t && w >= 0 && w < wochen && !wk[w]) { wk[w] = 1; keep[x.id] = 1; } });
+    return { behalten: L.filter(function (x) { return keep[x.id]; }).map(function (x) { return x.id; }), loeschen: L.filter(function (x) { return !keep[x.id] && x.t; }).map(function (x) { return x.id; }) };
+  }
   function stuecke(s, n) { n = n || CHUNK; var out = []; for (var i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out.length ? out : ['']; }
 
   // Verschlüsselter Export (optional): Format psv-enc-1
@@ -116,6 +147,6 @@
   return { ITER: ITER, MIN_ITER: MIN_ITER, CHUNK: CHUNK, b64: b64, unb64: unb64, einladungsCode: einladungsCode, codeNormal: codeNormal, codeAnzeige: codeAnzeige,
     schluesselAusPasswort: schluesselAusPasswort, schluesselExport: schluesselExport, schluesselImport: schluesselImport, neuesSalt: neuesSalt,
     verschluesseln: verschluesseln, entschluesseln: entschluesseln, encJSON: encJSON, decJSON: decJSON, pruefwert: pruefwert, pruefen: pruefen,
-    kanon: kanon, hash: hash, idTeil: idTeil, aufteilen: aufteilen, zusammensetzen: zusammensetzen, bereichName: bereichName, stuecke: stuecke,
+    kanon: kanon, hash: hash, idTeil: idTeil, aufteilen: aufteilen, zusammensetzen: zusammensetzen, bereichName: bereichName, stuecke: stuecke, grundText: grundText, GRUENDE: GRUENDE, sicherungPacken: sicherungPacken, sicherungEntpacken: sicherungEntpacken, sicherungZaehlen: sicherungZaehlen, sicherungAufbewahren: sicherungAufbewahren,
     exportVerschluesselt: exportVerschluesselt, istVerschluesselt: istVerschluesselt, importVerschluesselt: importVerschluesselt };
 });

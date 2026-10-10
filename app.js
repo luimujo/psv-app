@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.2';
+  var APP_VERSION = '2.3';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -192,6 +192,7 @@
     if (state.detail !== null) { v.innerHTML = viewDetail(state.detail); bindDetail(); setTitle(data.players[state.detail].archiviert ? 'Ehemaliger Spieler' : 'Spieler bearbeiten', data.players[state.detail].name || 'Neuer Spieler'); return; }
     var stTitel = function () { return M.titel(M.getSpieltag(data, state.stId)); };
     var subs = {
+      sicherungen: [function () { return CLOUD ? CLOUD.sicherungenView() : ''; }, function () { if (CLOUD) CLOUD.sicherungenBind(); }, 'Sicherungen', function () { return 'Versionsverlauf · verschlüsselt'; }],
       cloud: [function () { return window.PSVCloud ? window.PSVCloud.view() : ''; }, function () { if (window.PSVCloud) window.PSVCloud.bind(); }, 'Cloud & Team', function () { var s = CLOUD ? CLOUD.statusInfo() : null; return s ? (s.icon + ' ' + s.text) : ''; }],
       datenschutz: [function () { return '<div class="card cl-ds">' + (window.PSVCloud ? window.PSVCloud.datenschutzHtml() : '') + '</div>'; }, function () { }, 'Datenschutz', ''],
       encExp: [viewEncExp, bindEncExp, 'Verschlüsselt exportieren', ''],
@@ -450,7 +451,7 @@
   function archivFrage(p) {
     var n = M.vergangeneDaten(data, p.id).length;
     if (!confirm('„' + p.name + '“ aus dem Kader entfernen?\n\nDas Kind verschwindet aus Kader, Ranking, Zusagen und neuen Aufstellungen. In vergangenen Spieltagen, Spielberichten, Bewertungen und der Saison-Statistik bleibt es mit Name, Nummer und Foto erhalten' + (n ? ' (' + n + ' Spieltag' + (n > 1 ? 'e' : '') + ')' : '') + '.\n\nUnter „Ehemalige Spieler“ kannst du es jederzeit wiederherstellen.')) return;
-    M.archivieren(data, p.id); commit(); state.detail = null; render(); window.scrollTo(0, 0); toast(E.firstName(p.name) + ' ist jetzt bei „Ehemalige Spieler“');
+    sichern('vor_archiv'); M.archivieren(data, p.id); commit(); state.detail = null; render(); window.scrollTo(0, 0); toast(E.firstName(p.name) + ' ist jetzt bei „Ehemalige Spieler“');
   }
   function wiederFrage(p) {
     if (!confirm('„' + p.name + '“ wiederherstellen und zurück in den Kader holen?')) return;
@@ -874,7 +875,7 @@
     $('#dLive').addEventListener('click', function () { go(st.live && st.live.phase === 'ende' ? 'zusammenfassung' : 'live'); });
     $('#dDel').addEventListener('click', function () {
       if (!confirm('Spieltag „' + M.titel(st) + '“ mit Zusagen, Spielbericht, Spielbewertungen und eingefrorener Aufstellung löschen?')) return;
-      M.loescheSpieltag(data, st.id); commit(); state.sub = null; state.stId = null; render(); toast('Spieltag gelöscht');
+      sichern('vor_st_loeschen'); M.loescheSpieltag(data, st.id); commit(); state.sub = null; state.stId = null; render(); toast('Spieltag gelöscht');
     });
     if (closed) return;
     var segB = function (id, key) { bindSeg(id, function (v) { upd(function () { S[key] = v === '1'; }); }); };
@@ -1091,7 +1092,7 @@
     if ($('#hzMinus')) { $('#hzMinus').addEventListener('click', function () { L.halbzeit = Math.max(5, L.halbzeit - 5); commit(); keepScroll(render); }); $('#hzPlus').addEventListener('click', function () { L.halbzeit = Math.min(45, L.halbzeit + 5); commit(); keepScroll(render); }); }
     if ($('#lvGeg')) $('#lvGeg').addEventListener('click', function () { gegnerNotizFuerSpieltag(st); });
     bindGegnerInfo(st);
-    if ($('#lvStart')) $('#lvStart').addEventListener('click', function () { akt('start'); toast('Anpfiff – Uhr läuft'); });
+    if ($('#lvStart')) $('#lvStart').addEventListener('click', function () { sichern('vor_live'); akt('start'); toast('Anpfiff – Uhr läuft'); });
     if ($('#lvHalb')) $('#lvHalb').addEventListener('click', function () { akt('halbzeit'); });
     if ($('#lvZweite')) $('#lvZweite').addEventListener('click', function () { akt('zweite'); });
     if ($('#lvStop')) $('#lvStop').addEventListener('click', function () { if (!confirm('Abpfiff? Danach entsteht die Spielzusammenfassung (weiter bearbeitbar).')) return; akt('stop'); go('zusammenfassung'); });
@@ -1630,7 +1631,7 @@
     var nBew = 0, nAbg = 0; data.spieltage.forEach(function (s) { nBew += anzahlBewertet(s); if (s.status === 'abgeschlossen') nAbg++; });
     var cs = CLOUD ? CLOUD.statusInfo() : null, nA = CLOUD ? CLOUD.anfragenAnzahl() : 0;
     return '<div class="card"><h2>Cloud &amp; Team</h2>' + (CLOUD ? '<div class="cl-st ' + cs.s + '">' + cs.icon + ' ' + esc(cs.text) + '</div><div class="muted">Daten werden Ende-zu-Ende-verschlüsselt mit den Trainern im Team synchronisiert.</div>' : '<div class="muted">Die Daten liegen nur auf diesem Gerät.</div>') +
-      '<button class="btn' + (CLOUD ? ' sec' : '') + '" id="cloudM">' + (CLOUD ? 'Cloud & Team verwalten' + (nA ? ' (' + nA + ' Anfrage' + (nA > 1 ? 'n' : '') + ')' : '') : 'Cloud-Synchronisation einrichten') + '</button><button class="btn sec" id="dsM">Datenschutz</button></div>' +
+      '<button class="btn' + (CLOUD ? ' sec' : '') + '" id="cloudM">' + (CLOUD ? 'Cloud & Team verwalten' + (nA ? ' (' + nA + ' Anfrage' + (nA > 1 ? 'n' : '') + ')' : '') : 'Cloud-Synchronisation einrichten') + '</button>' + (CLOUD && CLOUD.entsperrt() ? '<button class="btn sec" id="sichM">🕓 Sicherungen (Versionsverlauf)</button>' : '') + '<button class="btn sec" id="dsM">Datenschutz</button></div>' +
       '<div class="card"><h2>Daten sichern & teilen</h2><div class="muted">' + (CLOUD ? 'Zusätzlich zur Cloud regelmäßig eine Sicherung exportieren – ohne Team-Passwort sind die Cloud-Daten nicht wiederherstellbar.' : 'Alle Daten liegen nur auf diesem Gerät.') + ' Der Export enthält Kader, Spieltage, Gegner-Datei, Messungen mit Testkatalog, eingefrorene Aufstellungen, Spielberichte und Spielbewertungen. Dateien aus Version 1.0 können weiterhin importiert werden.</div>' +
       '<button class="btn" id="exp">Exportieren (JSON-Datei speichern)</button>' + ((window.AndroidBridge && window.AndroidBridge.shareText) || navigator.share ? '<button class="btn sec" id="share">Teilen (z. B. per Messenger / Mail)</button>' : '') +
       '<button class="btn sec" id="expEnc">Verschlüsselt exportieren (mit Passwort)</button><button class="btn sec" id="imp">Importieren (JSON-Datei öffnen)</button><button class="btn sec" id="paste">Importieren aus eingefügtem Text</button></div>' +
@@ -1642,6 +1643,7 @@
       '<button class="btn sec" id="tkM">📋 Taktiktafeln</button><button class="btn sec" id="spImpM">SpielerPlus importieren (Zusagen)</button><button class="btn sec" id="fotoImp">Fotos aus Datei übernehmen</button><button class="btn warn" id="reset">Alle Daten leeren (neu beginnen)</button></div>' +
       '<div class="muted" style="padding:0 4px"><b>PSV Wesel-Lackhausen</b> · Aufstellung · Version ' + APP_VERSION + (CLOUD ? ' · Cloud-Synchronisation verschlüsselt (EU).' : ' · nur auf diesem Gerät gespeichert.') + ' Der Liga-Tab braucht Internet. Änderungen werden nicht in die Excel-Datei übertragen.</div>';
   }
+  function sichern(grund) { if (CLOUD && CLOUD.sicherung) CLOUD.sicherung(grund).catch(function (e) { console.warn('Sicherung', e); }); }
   function exportName() { var d = new Date(); return 'PSV_Wesel-Lackhausen_Daten_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.json'; }
   function exportText(pretty) { data.appVersion = APP_VERSION; return JSON.stringify(data, null, pretty ? 1 : 0); }
   function bindMehr() {
@@ -1662,6 +1664,7 @@
     $('#gegM').addEventListener('click', function () { go('gegnerListe'); });
     $('#reset').addEventListener('click', function () { if (!confirm('Wirklich ALLE Daten (Kader, Spieltage, Bewertungen, Messungen) löschen und leer beginnen?' + (CLOUD ? ' Das gilt auch in der Cloud für alle Trainer im Team!' : '') + ' Vorher exportieren!')) return; if (!confirm('Sicher? Das kann nicht rückgängig gemacht werden.')) return; data = normalize(clone(window.PSV_DEFAULT)); commit(); render(); toast('Daten geleert'); });
     $('#cloudM').addEventListener('click', function () { go('cloud'); });
+    if ($('#sichM')) $('#sichM').addEventListener('click', function () { go('sicherungen'); });
     $('#dsM').addEventListener('click', function () { go('datenschutz'); });
     $('#tkM').addEventListener('click', function () { go('taktiken'); });
     $('#spImpM').addEventListener('click', function () { state.imp = null; state.impMeldung = null; state.impUebernommen = false; go('spImport'); });
@@ -1769,7 +1772,7 @@
     var hatAbg = I.plan.some(function (s) { return s.abgeschlossen; });
     if (abg && !confirm('Zusagen in abgeschlossenen Spieltagen wirklich ändern?')) return;
     var schritte = I.plan.filter(function (s) { return !s.ignoriert && (!s.abgeschlossen || abg); });
-    var r = IMP.anwenden(data, I.plan, I.namen, M, { abgeschlosseneUeberschreiben: abg });
+    sichern('vor_import'); var r = IMP.anwenden(data, I.plan, I.namen, M, { abgeschlosseneUeberschreiben: abg });
     commit(); state.imp = null; state.impMeldung = null; state.impUebernommen = true;
     var ziel = null, zeilen = schritte.map(function (s) {
       var st = s.stId ? M.getSpieltag(data, s.stId) : data.spieltage.filter(function (x) { return x.datum === s.ev.datum && (!s.ev.gegner || x.gegner === s.ev.gegner); }).slice(-1)[0];
@@ -2149,7 +2152,7 @@
       var r = importiere(txt), d = r.d;
       var msg = 'Import ersetzt die aktuellen Daten (' + d.players.filter(function (p) { return p.name; }).length + ' Kinder, ' + d.spieltage.length + ' Spieltage in der Datei' + (r.alt ? ', Datei aus Version 1.0' : '') + ')' + (CLOUD ? ' – auch in der Cloud für alle Trainer im Team' : '') + '. Fortfahren?';
       if (!confirm(msg)) return;
-      data = d; state.sub = null; state.detail = null; commit(); render(); toast('Import erfolgreich' + (r.alt ? ' (Datei aus Version 1.0 umgewandelt)' : ''));
+      sichern('vor_json'); data = d; state.sub = null; state.detail = null; commit(); render(); toast('Import erfolgreich' + (r.alt ? ' (Datei aus Version 1.0 umgewandelt)' : ''));
     } catch (e) { alert('Import fehlgeschlagen: ' + e.message); }
   };
   window.onNativeMessage = function (t) { toast(t); };
@@ -2218,6 +2221,8 @@
       render: function () { keepScroll(render); },
       teamGeaendert: function () { var a = document.activeElement; if (state.tab === 'mehr' && (!state.sub || state.sub === 'cloud') && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) keepScroll(render); },
       konflikt: function () { },
+      version: function () { return APP_VERSION; },
+      hinweis: function (titel, text) { dialog(titel, '<p>' + esc(text) + '</p>', [{ t: 'OK' }]); },
       exportiereText: function (txt, was) { dateiSpeichern(exportName().replace('.json', '_' + was + '.json'), txt); },
       teileText: function (titel, txt) { if (window.AndroidBridge && window.AndroidBridge.shareText) window.AndroidBridge.shareText(titel, txt); else if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { toast('Einladung kopiert'); }, function () { }); }
     });
