@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B5E20">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Aufstellung, Spieltage und Taktik – PSV Wesel-Lackhausen">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PSV Aufstellung">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
+<title>PSV Wesel-Lackhausen</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="top">
+  <button id="backBtn" class="iconbtn hidden" aria-label="Zurück">‹</button>
+  <div class="titles"><h1 id="title">PSV Wesel-Lackhausen</h1><div id="subtitle" class="sub"></div></div>
+  <button id="syncSt" class="syncst hidden" aria-label="Sync-Status"></button>
+</header>
+<main id="view"></main>
+<nav id="tabs">
+  <button data-tab="kader" class="active"><span class="ic">👥</span>Kader</button>
+  <button data-tab="ranking"><span class="ic">🏆</span>Ranking</button>
+  <button data-tab="spieltag"><span class="ic">📅</span>Spieltage</button>
+  <button data-tab="liga"><span class="ic">📊</span>Liga</button>
+  <button data-tab="aufstellung"><span class="ic">⚽</span>Aufstellung</button>
+  <button data-tab="messungen"><span class="ic">📏</span>Messungen</button>
+  <button data-tab="mehr"><span class="ic">☰</span>Mehr</button>
+</nav>
+<div id="toast" class="toast hidden"></div>
+<input type="file" id="fileIn" accept="application/json,.json" class="hidden">
+<script src="data.js"></script>
+<script src="firebase.js"></script>
+<script src="cloud-core.js"></script>
+<script src="sync.js"></script>
+<script src="engine.js"></script>
+<script src="model.js"></script>
+<script src="taktik.js"></script>
+<script src="praes.js"></script>
+<script src="xlsx.js"></script>
+<script src="import.js"></script>
+<script src="app.js"></script>
+<script src="pwa.js"></script>
+</body>
+</html>
