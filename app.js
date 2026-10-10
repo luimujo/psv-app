@@ -1868,7 +1868,7 @@
       '<div>Spieltage</div><div>' + data.spieltage.length + (nAbg ? ' (' + nAbg + ' abgeschlossen)' : '') + '</div><div>Bewertungen</div><div>' + nBew + '</div></div>' +
       '<button class="btn sec" id="tkM">📋 Taktiktafeln</button><button class="btn sec" id="spImpM">SpielerPlus importieren (Zusagen)</button><button class="btn sec" id="fotoImp">Fotos aus Datei übernehmen</button><button class="btn warn" id="reset">Alle Daten leeren (neu beginnen)</button></div>' +
       '<div class="card kk-info"><img src="logo.svg" alt="" class="kk-logo"><div><b>Kaderkompass</b> · Version ' + APP_VERSION + '<br><span class="muted">Team: ' + esc(teamName()) + '</span><br>' + kkCopy() + '</div></div>' +
-      '<div class="muted" style="padding:0 4px"><b>Kaderkompass</b> · Version ' + APP_VERSION + (CLOUD ? ' · Cloud-Synchronisation verschlüsselt (EU).' : ' · nur auf diesem Gerät gespeichert.') + ' Der Liga-Tab braucht Internet. Änderungen werden nicht in die Excel-Datei übertragen.</div>';
+      '<div class="muted" style="padding:0 4px"><b>Kaderkompass</b> · Version ' + APP_VERSION + (CLOUD ? ' · Cloud-Synchronisation verschlüsselt (EU).' : ' · nur auf diesem Gerät gespeichert.') + ' Der Liga-Tab braucht Internet.</div>';
   }
   function sichern(grund) { if (CLOUD && CLOUD.sicherung) CLOUD.sicherung(grund).catch(function (e) { console.warn('Sicherung', e); }); }
   function exportName() { var d = new Date(); return 'PSV_Wesel-Lackhausen_Daten_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.json'; }

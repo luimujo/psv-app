@@ -5,7 +5,7 @@
  */
 (function (root) {
   'use strict';
-  var PV_POS = ['TW', 'IV', 'LV', 'RV', '6', '8', '10', 'LA', 'RA', 'ST', 'HS'];   // Positionsvorschlag AI:AS / Bogen B45:B55
+  var PV_POS = ['TW', 'IV', 'LV', 'RV', '6', '8', '10', 'LA', 'RA', 'ST', 'HS'];   // Positionsvorschlag
   var POS12 = ['TW', 'IV', 'LV', 'RV', '6', '8', '10', 'LM', 'RM', 'LA', 'RA', 'ST']; // Positionen auf den Feldern
   var PRI = ['TW', 'IV', '6', '8', 'ST', 'LM', 'RM', 'LA', 'RA', 'LV', 'RV', '10'];   // Vergabe-Reihenfolge
   var COLMAP = { LM: 'LA', RM: 'RA' };
@@ -45,7 +45,7 @@
   function avg(arr) { var s = 0, n = 0; arr.forEach(function (v) { if (isNum(v)) { s += v; n++; } }); return n ? s / n : null; }
   function rng(a, b) { var r = []; for (var i = a; i <= b; i++) r.push(i); return r; }
 
-  // Gewichte der Positionsnote (Positionsvorschlag AI:AS)
+  // Gewichte der Positionsnote (Positionsvorschlag)
   var TW_SKILL_W = [[16, .14], [17, .08], [18, .08], [19, .08], [20, .14], [21, .14], [22, .12], [23, .08], [25, .08], [42, .06]];
   var FIELD_W = {
     IV: [[25, .2], [21, .14], [36, .18], [29, .18], [39, .1], [26, .12], [42, .08]],
@@ -107,7 +107,7 @@
     return r;
   }
 
-  // ---------- Positionsvorschlag AI:AS ----------
+  // ---------- Positionsvorschlag ----------
   function posScores(p) {
     var out = {};
     PV_POS.forEach(function (q) {
