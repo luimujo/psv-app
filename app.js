@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.8';
+  var APP_VERSION = '2.8.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -230,6 +230,7 @@
     if (state.detail !== null) { state.detail = null; if (state.detailZurueck) { state.sub = state.detailZurueck; state.detailZurueck = null; } render(); return true; }
     if (state.zsZurueck && ['zusammenfassung', 'spieltag'].indexOf(state.sub) >= 0) { state.sub = state.zsZurueck; state.zsZurueck = null; render(); window.scrollTo(0, 0); return true; }
     if (state.sub === 'gegner') { var gz = state.gegnerZurueck; state.gegnerZurueck = null; if (gz) { state.tab = gz.tab; state.sub = gz.sub; state.stId = gz.stId; } else state.sub = 'gegnerListe'; render(); window.scrollTo(0, 0); return true; }
+    if (state.sub === 'anleitung') { state.sub = state.anlZurueck || null; state.anlZurueck = null; render(); return true; }
     if (['bewertung', 'spiel', 'live', 'sr', 'zusammenfassung'].indexOf(state.sub) >= 0) { state.sub = 'spieltag'; render(); window.scrollTo(0, 0); return true; }
     if (state.sub === 'messVerlauf' && E.isNum(state.mvZurueck)) { state.sub = null; state.detail = state.mvZurueck; state.mvZurueck = null; render(); return true; }
     if (state.sub === 'testEdit') { state.sub = 'messKatalog'; render(); return true; }
@@ -239,6 +240,7 @@
   };
   $$('#tabs button').forEach(function (b) { b.addEventListener('click', function () { setTab(b.getAttribute('data-tab')); }); });
   $('#backBtn').addEventListener('click', function () { window.appBack(); });
+  $('#hilfeBtn').addEventListener('click', function () { if (state.sub === 'anleitung') return; anleitungOeffnen(hilfeKontext()); });
   function keepScroll(fn) { var y = window.scrollY; fn(); window.scrollTo(0, y); }
 
   function render() {
@@ -271,6 +273,7 @@
       spiel: [viewSpiel, bindSpiel, 'Spielbericht', stTitel],
       live: [viewLive, bindLive, 'Live-Spiel', stTitel],
       sr: [viewSr, bindSr, 'Schiedsrichter-Modus', stTitel],
+      anleitung: [viewAnleitung, bindAnleitung, 'Anleitung', 'So geht’s – kurz erklärt'],
       zusammenfassung: [viewZusammenfassung, bindZusammenfassung, 'Spielzusammenfassung', stTitel],
       messNeu: [viewMessNeu, bindMessNeu, 'Neuer Messtermin', 'Tests auswählen'],
       messTermin: [viewMessTermin, bindMessTermin, 'Messtermin', function () { var m = M.messungById(data, state.messId); return m ? M.fmtDatum(m.datum) + (m.titel ? ' · ' + m.titel : '') : ''; }],
@@ -1669,6 +1672,27 @@
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && data) { wachHalten(); if (state.sub === 'live') keepScroll(render); } });
 
 
+
+  // ---------- Anleitung (ab 2.8.1, Inhalt aus src/anleitung) ----------
+  var ANL = window.PSVAnleitung;
+  function anleitungOeffnen(ziel) { state.anlZurueck = state.sub || null; state.anlZiel = ziel || null; state.anlSuche = ''; go('anleitung'); }
+  function viewAnleitung() {
+    if (!ANL || !ANL.DATEN) return '<div class="card">Anleitung nicht verfügbar.</div>';
+    return '<style>' + ANL.CSS + '</style><div class="card"><input type="search" id="anlQ" placeholder="Suchen, z. B. Zusagen, Timer, PDF" value="' + esc(state.anlSuche || '') + '"><div class="row" style="flex-wrap:wrap;gap:6px;margin-top:8px">' +
+      ANL.DATEN.karten.map(function (k) { return '<button class="btn small sec" style="width:auto" data-anl="' + k.id + '">' + esc(k.titel) + '</button>'; }).join('') + '<button class="btn small sec" style="width:auto" data-anl="neu">Was ist neu</button></div></div>' +
+      '<div id="anlListe">' + ANL.DATEN.karten.map(ANL.karteHtml).join('') + ANL.neuHtml() + '</div><div class="muted" id="anlLeer" style="display:none;text-align:center">Nichts gefunden.</div>';
+  }
+  function bindAnleitung() {
+    if (!ANL || !ANL.DATEN) return;
+    function filter() { var q = state.anlSuche = $('#anlQ').value, n = 0; ANL.DATEN.karten.forEach(function (k) { var ok = ANL.treffer(k, q); $('#anl-' + k.id).style.display = ok ? '' : 'none'; if (ok) n++; }); var nv = !q || /neu|version/i.test(q); $('#anl-neu').style.display = nv ? '' : 'none'; $('#anlLeer').style.display = n || nv ? 'none' : ''; }
+    $('#anlQ').addEventListener('input', filter); filter();
+    $$('[data-anl]').forEach(function (b) { b.addEventListener('click', function () { $('#anlQ').value = ''; filter(); var z = $('#anl-' + b.getAttribute('data-anl')); if (z) z.scrollIntoView({ behavior: 'smooth' }); }); });
+    if (state.anlZiel) { var z = $('#anl-' + state.anlZiel); state.anlZiel = null; if (z) setTimeout(function () { z.scrollIntoView(); }, 30); }
+  }
+  function hilfeKontext() {   // passende Karte zum aktuellen Bildschirm
+    var sub = { live: 'live', sr: 'sr', zusammenfassung: 'nachher', bewertung: 'nachher', spieltag: 'aufstellung', spiel: 'aufstellung', messTermin: 'messungen', messNeu: 'messungen', praes: 'praes', spImport: 'spieltag', neu: 'spieltag' }[state.sub];
+    return sub || (ANL && ANL.karteFuer(state.tab)) || null;
+  }
   // ---------- Schiedsrichter-Modus (ab 2.8) ----------
   var SR = window.PSVSchiri;
   function srMinute(st) { var m = jetztMinute(st); return E.isNum(m) ? m : letzteMinute(st); }
@@ -2288,7 +2312,7 @@
   function viewMehr() {
     var nBew = 0, nAbg = 0; data.spieltage.forEach(function (s) { nBew += anzahlBewertet(s); if (s.status === 'abgeschlossen') nAbg++; });
     var cs = CLOUD ? CLOUD.statusInfo() : null, nA = CLOUD ? CLOUD.anfragenAnzahl() : 0;
-    return '<div class="card"><h2>Cloud &amp; Team</h2>' + (CLOUD ? '<div class="cl-st ' + cs.s + '">' + cs.icon + ' ' + esc(cs.text) + '</div><div class="muted">Daten werden Ende-zu-Ende-verschlüsselt mit den Trainern im Team synchronisiert.</div>' : '<div class="muted">Die Daten liegen nur auf diesem Gerät.</div>') +
+    return '<button class="btn sec" id="anlM">❓ Anleitung &amp; Was ist neu</button><div class="card"><h2>Cloud &amp; Team</h2>' + (CLOUD ? '<div class="cl-st ' + cs.s + '">' + cs.icon + ' ' + esc(cs.text) + '</div><div class="muted">Daten werden Ende-zu-Ende-verschlüsselt mit den Trainern im Team synchronisiert.</div>' : '<div class="muted">Die Daten liegen nur auf diesem Gerät.</div>') +
       '<button class="btn' + (CLOUD ? ' sec' : '') + '" id="cloudM">' + (CLOUD ? 'Cloud & Team verwalten' + (nA ? ' (' + nA + ' Anfrage' + (nA > 1 ? 'n' : '') + ')' : '') : 'Cloud-Synchronisation einrichten') + '</button>' + (CLOUD && CLOUD.entsperrt() ? '<button class="btn sec" id="sichM">🕓 Sicherungen (Versionsverlauf)</button>' : '') + '<button class="btn sec" id="dsM">Datenschutz</button></div>' +
       '<div class="card"><h2>Daten sichern & teilen</h2><div class="muted">' + (CLOUD ? 'Zusätzlich zur Cloud regelmäßig eine Sicherung exportieren – ohne Team-Passwort sind die Cloud-Daten nicht wiederherstellbar.' : 'Alle Daten liegen nur auf diesem Gerät.') + ' Der Export enthält Kader, Spieltage, Gegner-Datei, Messungen mit Testkatalog, eingefrorene Aufstellungen, Spielberichte und Spielbewertungen. Dateien aus Version 1.0 können weiterhin importiert werden.</div>' +
       '<button class="btn" id="exp">Exportieren (JSON-Datei speichern)</button>' + ((window.AndroidBridge && window.AndroidBridge.shareText) || navigator.share ? '<button class="btn sec" id="share">Teilen (z. B. per Messenger / Mail)</button>' : '') +
@@ -2309,6 +2333,7 @@
   function bindMehr() {
     $$('[data-tt]').forEach(function (c) { c.addEventListener('change', function () { data.settings.trainingstage = $$('[data-tt]').filter(function (x) { return x.checked; }).map(function (x) { return +x.getAttribute('data-tt'); }).sort(); commit(); }); });
     $('#saisonStart').addEventListener('change', function (e) { data.settings.saisonStartMonat = +e.target.value; state.saisonKey = undefined; commit(); keepScroll(render); });
+    $('#anlM').addEventListener('click', function () { anleitungOeffnen(null); });
     $('#exp').addEventListener('click', function () {
       var txt = exportText(true), name = exportName();
       if (window.AndroidBridge && window.AndroidBridge.saveFile) { window.AndroidBridge.saveFile(name, txt); return; }
