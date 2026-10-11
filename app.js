@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.7.2';
+  var APP_VERSION = '2.8';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -230,7 +230,7 @@
     if (state.detail !== null) { state.detail = null; if (state.detailZurueck) { state.sub = state.detailZurueck; state.detailZurueck = null; } render(); return true; }
     if (state.zsZurueck && ['zusammenfassung', 'spieltag'].indexOf(state.sub) >= 0) { state.sub = state.zsZurueck; state.zsZurueck = null; render(); window.scrollTo(0, 0); return true; }
     if (state.sub === 'gegner') { var gz = state.gegnerZurueck; state.gegnerZurueck = null; if (gz) { state.tab = gz.tab; state.sub = gz.sub; state.stId = gz.stId; } else state.sub = 'gegnerListe'; render(); window.scrollTo(0, 0); return true; }
-    if (['bewertung', 'spiel', 'live', 'zusammenfassung'].indexOf(state.sub) >= 0) { state.sub = 'spieltag'; render(); window.scrollTo(0, 0); return true; }
+    if (['bewertung', 'spiel', 'live', 'sr', 'zusammenfassung'].indexOf(state.sub) >= 0) { state.sub = 'spieltag'; render(); window.scrollTo(0, 0); return true; }
     if (state.sub === 'messVerlauf' && E.isNum(state.mvZurueck)) { state.sub = null; state.detail = state.mvZurueck; state.mvZurueck = null; render(); return true; }
     if (state.sub === 'testEdit') { state.sub = 'messKatalog'; render(); return true; }
     if (state.sub) { state.sub = null; render(); return true; }
@@ -270,6 +270,7 @@
       bewertung: [viewBewertung, bindBewertung, 'Spielbewertung', stTitel],
       spiel: [viewSpiel, bindSpiel, 'Spielbericht', stTitel],
       live: [viewLive, bindLive, 'Live-Spiel', stTitel],
+      sr: [viewSr, bindSr, 'Schiedsrichter-Modus', stTitel],
       zusammenfassung: [viewZusammenfassung, bindZusammenfassung, 'Spielzusammenfassung', stTitel],
       messNeu: [viewMessNeu, bindMessNeu, 'Neuer Messtermin', 'Tests auswählen'],
       messTermin: [viewMessTermin, bindMessTermin, 'Messtermin', function () { var m = M.messungById(data, state.messId); return m ? M.fmtDatum(m.datum) + (m.titel ? ' · ' + m.titel : '') : ''; }],
@@ -281,7 +282,7 @@
       testEdit: [viewTestEdit, bindTestEdit, 'Test bearbeiten', function () { var t = M.testById(data, state.testId); return t ? t.name : ''; }]
     };
     if (state.sub && subs[state.sub]) {
-      if (['spieltag', 'bewertung', 'spiel', 'live', 'zusammenfassung'].indexOf(state.sub) >= 0 && !M.getSpieltag(data, state.stId)) { state.sub = null; return render(); }
+      if (['spieltag', 'bewertung', 'spiel', 'live', 'sr', 'zusammenfassung'].indexOf(state.sub) >= 0 && !M.getSpieltag(data, state.stId)) { state.sub = null; return render(); }
       var s = subs[state.sub]; v.innerHTML = s[0](); s[1](); setTitle(s[2], typeof s[3] === 'function' ? s[3]() : s[3]); return;
     }
     var f = { kader: viewKader, ranking: viewRanking, spieltag: viewSpieltage, liga: viewLiga, aufstellung: viewAufstellung, messungen: viewMessungen, mehr: viewMehr }[state.tab];
@@ -617,7 +618,7 @@
       '<div class="tchips scrollx" id="mtTests">' + m.tests.map(function (id) { var x = M.testById(data, id); if (!x) return ''; var n = messKinder(m, x).filter(function (p) { return M.messErgebnis(data, m, p.id, id); }).length; return '<button class="tchip' + (id === tid ? ' on' : '') + '" data-mt="' + esc(id) + '">' + esc(x.name) + '<small>' + n + ' ✓</small></button>'; }).join('') + '<button class="tchip add" id="mtAdd">+ Test</button></div></div>';
     if (!t) return h + '<div class="card empty">Kein Test gewählt.</div>';
     var tv = M.teamVergleich(data, m, tid);
-    if (tid === 'duell_off' || tid === 'duell_def') h += duellKarte(m);
+    if (tid === 'duell_off' || tid === 'duell_def') h += duellKarte(m); else if (MT) h += mwKarte(m, t);
     h += '<div class="card" id="mtGrid"><h2>' + esc(t.name) + ' <span class="muted">' + esc(t.einheit) + ' · ' + (t.richtung === 'kleiner' ? 'weniger ist besser' : 'mehr ist besser') + ' · ' + t.versuche + ' Versuch' + (t.versuche > 1 ? 'e' : '') + (t.versuche > 1 ? ', zählt ' + (t.regel === 'mittel' ? 'Mittel' : 'Bestwert') : '') + '</span></h2>' +
       '<div class="muted">' + esc(t.beschreibung || '') + '</div>';
     h += '<div class="mgrid">';
@@ -630,6 +631,115 @@
     h += '</div><div class="muted" id="mtTeam" style="margin-top:8px">' + teamTxt(t, tv) + '</div></div>';
     h += '<div class="card"><button class="btn sec" id="mtVerlaufAlle">Ergebnisse aller Tests (Übersicht)</button><button class="btn warn" id="mtDel">Messtermin löschen</button></div>';
     return h;
+  }
+  // ---------- Messwerkzeuge je Test (ab 2.8) ----------
+  var MT = window.PSVMesstools;
+  function mwIds(m) { var ok = messKinder(m).map(function (p) { return p.id; }); return (m.teilnehmer || []).filter(function (id) { return ok.indexOf(id) >= 0; }); }
+  function mwKind(m, t) {
+    var ids = mwIds(m), mw = state.mw || (state.mw = {});
+    if (ids.indexOf(mw.pid) < 0) mw.pid = MT.naechstesKind(m.werte, t.id, ids, null, Math.max(1, t.versuche)) || ids[0];
+    return mw.pid;
+  }
+  function wertTxt2(t, v) { return E.isNum(v) ? String(v).replace('.', ',') + ' ' + t.einheit : '–'; }
+  function mwKarte(m, t) {
+    if (!m.teilnehmer || state.duellTnEdit) return duellTeilnehmerKarte(m);
+    var wz = MT.werkzeug(t), ids = mwIds(m), pid = mwKind(m, t), p = pById(pid), V = Math.max(1, t.versuche), L = (m.werte[pid] && m.werte[pid][t.id]) || [];
+    var h = '<div class="card" id="mwKarte"><h2>Messwerkzeug: ' + esc(MT.NAMEN[wz]) + '</h2>';
+    if (wz === 'lauf' || wz === 'runden') {
+      h += '<div class="muted">Alle ausgewählten Kinder laufen gleichzeitig. Pro Runde das Kind antippen; am Ende Reststrecke ergänzen.' + (t.id === 'yoyo' ? ' Die Yo-Yo-Pieptöne bitte über die offizielle Audiodatei abspielen; hier werden nur die Strecken mitgezählt.' : '') + '</div>' +
+        '<div class="grid2"><div><label class="f">Rundenlänge (m)</label><input type="number" id="mwRunde" min="1" value="' + (m.mwRunde || (t.id === 'yoyo' ? 40 : 50)) + '"></div>' + (wz === 'lauf' ? '<div><label class="f">Dauer (Min.)</label><input type="number" id="mwDauer" min="1" value="' + Math.round((m.mwDauer || MT.laufDauer(t)) / 60) + '"></div>' : '') + '</div>' +
+        '<button class="btn big" id="mwLos">▶ Start (' + ids.length + ' Kinder)</button>';
+    } else {
+      h += '<div class="row" style="gap:10px;align-items:center">' + avatar(p, 'm') + '<div class="grow"><b style="font-size:18px">' + esc(p ? E.firstName(p.name) : '') + '</b><div class="muted">' + L.map(function (v, i) { return (i + 1) + '. ' + wertTxt2(t, v); }).join(' · ') + (L.filter(E.isNum).length ? '' : 'noch kein Versuch') + '</div></div><button class="btn small sec" id="mwVor">‹</button><button class="btn small sec" id="mwNach">›</button></div>';
+      if (wz === 'stoppuhr') h += '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="mwSeq"' + (m.mwSequenz !== false ? ' checked' : '') + '> Startsignal „Auf die Plätze – fertig – los“</label><button class="btn big" id="mwLos">▶ Start</button>';
+      if (wz === 'zaehler' || wz === 'treffer') h += '<div class="row" style="gap:8px;align-items:center;margin-top:6px"><label class="muted">Countdown</label>' + sel('mwCd', m.mwCountdown || 0, [[0, 'aus'], [30, '30 s'], [60, '60 s'], [90, '90 s'], [120, '2 Min.']]) + '</div><button class="btn big" id="mwLos">▶ Start</button>';
+      if (wz === 'reaktion') h += '<div class="muted">Start: nach zufälliger Wartezeit (1–3 s) ertönt das Signal zum Fallenlassen. Danach die Fangstrecke eingeben.</div><button class="btn big" id="mwLos">▶ Signal starten</button>';
+      if (wz === 'reaktion' || wz === 'eingabe') h += '<div class="row" style="gap:6px;margin-top:6px"><input type="text" inputmode="decimal" id="mwWert" placeholder="' + esc(t.einheit) + '" style="font-size:22px"><button class="btn" id="mwOk" style="flex:none;width:auto">Speichern</button></div>';
+      h += '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="mwAuto"' + (state.mwAuto !== false ? ' checked' : '') + '> danach automatisch nächstes Kind</label>';
+    }
+    h += '<div class="muted" style="margin-top:6px">' + ids.length + ' Teilnehmer · ' + ids.filter(function (id) { return MT.freierVersuch(m.werte[id] && m.werte[id][t.id], V) < 0; }).length + ' fertig</div><button class="btn small sec" id="mwTn">Teilnehmer ändern</button></div>';
+    return h;
+  }
+  function mwSpeichern(m, t, wert) {   // in den nächsten freien Versuch des aktuellen Kindes schreiben
+    var pid = state.mw.pid, V = Math.max(1, t.versuche), L = (m.werte[pid] && m.werte[pid][t.id]) || [], i = MT.freierVersuch(L, V); if (i < 0) i = V - 1;
+    M.messwertSetzen(m, pid, t.id, i, wert); commit();
+    var fertig = MT.freierVersuch((m.werte[pid] || {})[t.id], V) < 0;
+    if (fertig && state.mwAuto !== false) { var n = MT.naechstesKind(m.werte, t.id, mwIds(m), pid, V); if (n) state.mw.pid = n; }
+    toast((pById(pid) ? E.firstName(pById(pid).name) + ': ' : '') + wertTxt2(t, wert) + ' gespeichert');
+    keepScroll(render);
+  }
+  function mwOverlay(html) { var o = document.createElement('div'); o.id = 'mwOv'; o.style.cssText = 'position:fixed;inset:0;z-index:50;background:var(--g);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;text-align:center;overflow:auto'; o.innerHTML = html; document.body.appendChild(o); return o; }
+  function mwEnde(o) { if (o) o.remove(); duWach(false); }
+  var WB = 'style="background:#fff;color:var(--g);font-size:22px;padding:16px;max-width:460px"';
+  function mwStoppuhr(m, t) {
+    duAudioFreischalten(); duWach(true);
+    var o = mwOverlay('<div style="font-size:20px;font-weight:700">' + esc(E.firstName(pById(state.mw.pid).name)) + ' · ' + esc(t.name) + '</div><div id="mwZ" style="font-size:24vmin;font-weight:800;font-variant-numeric:tabular-nums">' + (m.mwSequenz !== false ? 'Auf die Plätze' : '0,00') + '</div><button class="btn" id="mwStopp" ' + WB + '>■ STOPP</button><button class="btn sec" id="mwAbbr" style="max-width:460px">Abbrechen</button>');
+    var t0 = null, timer = null, aus = false;
+    function los() { t0 = performance.now(); timer = setInterval(function () { $('#mwZ', o).textContent = ((performance.now() - t0) / 1000).toFixed(2).replace('.', ','); }, 31); }
+    if (m.mwSequenz !== false) { var txt = ['Auf die Plätze', 'fertig', 'los!']; MT.SEQUENZ.forEach(function (s, i) { setTimeout(function () { if (aus) return; duTon(s.ms, s.hz); $('#mwZ', o).textContent = txt[i]; if (i === 2) los(); }, s.t); }); }
+    else { duTon(400, 2900); los(); }
+    $('#mwStopp', o).addEventListener('click', function () { if (t0 === null) return; var ms = performance.now() - t0; aus = true; clearInterval(timer); mwEnde(o); mwSpeichern(m, t, MT.zeitWert(ms)); });
+    $('#mwAbbr', o).addEventListener('click', function () { aus = true; clearInterval(timer); mwEnde(o); });
+  }
+  function mwZaehlen(m, t, treffer) {
+    duAudioFreischalten(); duWach(true);
+    var cd = +m.mwCountdown || 0, n = 0, versuche = 0, ende = null, V = /von (\d+)/.exec(t.einheit || ''), MAXV = V ? +V[1] : 10, verlauf = [];
+    var o = mwOverlay('<div style="font-size:20px;font-weight:700">' + esc(E.firstName(pById(state.mw.pid).name)) + ' · ' + esc(t.name) + '</div>' + (cd ? '<div id="mwCdZ" style="font-size:28px">' + cd + ' s</div>' : '') +
+      '<div id="mwZ" style="font-size:26vmin;font-weight:800">0</div>' + (treffer ? '<div id="mwV" style="font-size:18px">Versuch 0 / ' + MAXV + '</div><div class="row" style="gap:10px;width:100%;max-width:460px"><button class="btn" id="mwT" ' + WB + '>✓ Treffer</button><button class="btn" id="mwD" style="background:#fff;color:#C62828;font-size:22px;padding:16px">✗ Daneben</button></div>' : '<button class="btn" id="mwT" ' + WB + '>+1</button>') +
+      '<div class="row" style="gap:8px;max-width:460px;width:100%"><button class="btn sec" id="mwUndo">↶ Rückgängig</button><button class="btn sec" id="mwFertig">' + (treffer ? 'Fertig' : 'Ball gefallen – Ende') + '</button></div><button class="btn sec" id="mwAbbr" style="max-width:460px">Abbrechen</button>');
+    function zeig() { $('#mwZ', o).textContent = n; if (treffer) $('#mwV', o).textContent = 'Versuch ' + versuche + ' / ' + MAXV; }
+    var t0 = Date.now(), iv = cd ? setInterval(function () { var r = cd - Math.floor((Date.now() - t0) / 1000); $('#mwCdZ', o).textContent = Math.max(0, r) + ' s'; if (r <= 5 && r > 0 && r !== iv.l) { iv.l = r; duTon(120, 2900); } if (r <= 0) { duTon(1000, 2400); fertig(); } }, 200) : null;
+    if (iv) iv = { id: iv, l: null }; var ivId = iv ? iv.id : null;
+    function fertig() { if (ende) return; ende = true; if (ivId) clearInterval(ivId); mwEnde(o); mwSpeichern(m, t, n); }
+    $('#mwT', o).addEventListener('click', function () { n++; versuche++; verlauf.push(1); duTon(60, 2000); zeig(); if (treffer && versuche >= MAXV) fertig(); });
+    if (treffer) $('#mwD', o).addEventListener('click', function () { versuche++; verlauf.push(0); zeig(); if (versuche >= MAXV) fertig(); });
+    $('#mwUndo', o).addEventListener('click', function () { var x = verlauf.pop(); if (x === undefined) return; versuche--; n -= x; zeig(); });
+    $('#mwFertig', o).addEventListener('click', fertig);
+    $('#mwAbbr', o).addEventListener('click', function () { ende = true; if (ivId) clearInterval(ivId); mwEnde(o); });
+  }
+  function mwReaktion() {
+    duAudioFreischalten();
+    var o = mwOverlay('<div style="font-size:22px">Bereit …</div><div id="mwZ" style="font-size:16vmin;font-weight:800">⋯</div><button class="btn sec" id="mwAbbr" style="max-width:460px">Schließen</button>'), aus = false;
+    setTimeout(function () { if (aus) return; duTon(300, 2900); $('#mwZ', o).textContent = 'JETZT!'; setTimeout(function () { if (!aus) { mwEnde(o); var i = $('#mwWert'); if (i) i.focus(); } }, 1200); }, 1000 + Math.random() * 2000);
+    $('#mwAbbr', o).addEventListener('click', function () { aus = true; mwEnde(o); });
+  }
+  function mwLauf(m, t, mitCountdown) {
+    duAudioFreischalten(); duWach(true);
+    var ids = mwIds(m), R = {}, dauer = mitCountdown ? (m.mwDauer || MT.laufDauer(t)) : 0, t0 = Date.now(), schon = {}, laeuft = true;
+    ids.forEach(function (id) { R[id] = 0; });
+    var o = mwOverlay('<div id="mwZ" style="font-size:15vmin;font-weight:800;font-variant-numeric:tabular-nums">' + (dauer ? SR.uhrText(dauer) : '0:00') + '</div><div class="muted" style="color:#fff">Kind antippen = +1 Runde · − korrigiert</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;width:100%">' + ids.map(function (id) { return '<div style="background:#fff;color:var(--g);border-radius:12px;padding:8px;display:flex;flex-direction:column;align-items:center"><button data-lr="' + id + '" style="border:0;background:none;color:inherit;font-size:18px;font-weight:700;width:100%">' + esc(E.firstName(pById(id).name)) + '<br><span id="lr_' + id + '" style="font-size:30px">0</span></button><button data-lm="' + id + '" class="btn small sec" style="width:auto">−</button></div>'; }).join('') + '</div>' +
+      '<button class="btn sec" id="mwFertig" style="max-width:460px">' + (dauer ? 'Vorzeitig beenden' : 'Fertig') + '</button>');
+    var iv = setInterval(function () { var s = (Date.now() - t0) / 1000; $('#mwZ', o).textContent = dauer ? SR.uhrText(Math.max(0, dauer - s)) : SR.uhrText(s);
+      if (dauer) MT.minutenSignale(dauer, s, schon).forEach(function (x) { duTon(x === 'ende' ? 1200 : 250, x === 'ende' ? 2400 : 2900); if (x === 'ende') fertig(); }); }, 250);
+    $$('[data-lr]', o).forEach(function (b) { b.addEventListener('click', function () { if (!laeuft) return; var id = +b.getAttribute('data-lr'); R[id]++; $('#lr_' + id, o).textContent = R[id]; duTon(50, 2000); }); });
+    $$('[data-lm]', o).forEach(function (b) { b.addEventListener('click', function () { var id = +b.getAttribute('data-lm'); R[id] = Math.max(0, R[id] - 1); $('#lr_' + id, o).textContent = R[id]; }); });
+    $('#mwFertig', o).addEventListener('click', fertig);
+    function fertig() {
+      if (!laeuft) return; laeuft = false; clearInterval(iv); mwEnde(o);
+      var len = +m.mwRunde || (t.id === 'yoyo' ? 40 : 50);
+      openSheet('<h3>Strecken übernehmen</h3><div class="muted">Runden × ' + len + ' m + Reststrecke (m)</div><table class="st"><tbody>' + ids.map(function (id) { return '<tr><td>' + esc(E.firstName(pById(id).name)) + '</td><td class="c">' + R[id] + ' R.</td><td><input type="number" min="0" data-rest="' + id + '" placeholder="Rest m" style="width:80px"></td></tr>'; }).join('') + '</tbody></table><button class="btn" id="mwUeb">Übernehmen</button>', function (root) {
+        $('#mwUeb', root).addEventListener('click', function () { ids.forEach(function (id) { var rest = +($('[data-rest="' + id + '"]', root).value || 0); if (R[id] || rest) M.messwertSetzen(m, id, t.id, 0, MT.strecke(R[id], len, rest)); }); commit(); closeSheet(); keepScroll(render); toast('Strecken gespeichert'); });
+      });
+    }
+  }
+  function bindMw(m, t) {
+    bindDuellTeilnehmer(m);
+    if (!$('#mwKarte') || !t) return;
+    var wz = MT.werkzeug(t), ids = mwIds(m);
+    $('#mwTn').addEventListener('click', function () { state.duellTnEdit = true; keepScroll(render); });
+    if ($('#mwRunde')) $('#mwRunde').addEventListener('change', function (e) { m.mwRunde = +e.target.value || 50; commit(); });
+    if ($('#mwDauer')) $('#mwDauer').addEventListener('change', function (e) { m.mwDauer = Math.max(60, (+e.target.value || 6) * 60); commit(); });
+    if ($('#mwSeq')) $('#mwSeq').addEventListener('change', function (e) { m.mwSequenz = e.target.checked; commit(); });
+    if ($('#mwCd')) $('#mwCd').addEventListener('change', function (e) { m.mwCountdown = +e.target.value; commit(); });
+    if ($('#mwAuto')) $('#mwAuto').addEventListener('change', function (e) { state.mwAuto = e.target.checked; });
+    if ($('#mwVor')) { var mv = function (d) { var i = ids.indexOf(state.mw.pid); state.mw.pid = ids[(i + d + ids.length) % ids.length]; keepScroll(render); }; $('#mwVor').addEventListener('click', function () { mv(-1); }); $('#mwNach').addEventListener('click', function () { mv(1); }); }
+    if ($('#mwOk')) { var spe = function () { var v = zahl($('#mwWert').value.trim()); if (v === null) { toast('Bitte eine Zahl eingeben'); return; } mwSpeichern(m, t, v); setTimeout(function () { var i = $('#mwWert'); if (i) i.focus(); }, 50); };
+      $('#mwOk').addEventListener('click', spe); $('#mwWert').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); spe(); } }); }
+    if ($('#mwLos')) $('#mwLos').addEventListener('click', function () {
+      if (wz === 'stoppuhr') mwStoppuhr(m, t); else if (wz === 'zaehler') mwZaehlen(m, t, false); else if (wz === 'treffer') mwZaehlen(m, t, true);
+      else if (wz === 'reaktion') mwReaktion(); else if (wz === 'lauf') mwLauf(m, t, true); else if (wz === 'runden') mwLauf(m, t, false);
+    });
   }
   // ---------- 1-gegen-1-Erfassung (ab 2.7) ----------
   function duellNote(pid) { var p = pById(pid), i = data.players.indexOf(p); return i >= 0 && R && R.evals[i] ? R.evals[i].gesamt : null; }
@@ -687,12 +797,13 @@
     var st = data.spieltage.filter(function (s) { return s.datum === m.datum && Object.keys(s.zusagen || {}).some(function (k) { return s.zusagen[k] === 'Zugesagt'; }); })[0];
     return st ? alle.filter(function (id) { return st.zusagen[id] === 'Zugesagt'; }) : alle;
   }
+  function TK() { return /^duell/.test(state.messTest || '') ? 'duellTeilnehmer' : 'teilnehmer'; }
   function duellTeilnehmerKarte(m, neu) {
-    var alle = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }), sel = m.duellTeilnehmer || duellVorauswahl(m);
-    return '<div class="card" id="duTn"><h2>1-gegen-1: Wer macht mit?</h2><div class="muted">' + (m.duellTeilnehmer ? 'Teilnehmer ändern (z. B. Nachzügler).' : 'Anwesende Kinder auswählen – nur sie werden für die Duelle eingeteilt.') + '</div>' +
+    var alle = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }), sel = m[TK()] || (TK() === 'teilnehmer' && m[TK()]) || duellVorauswahl(m);
+    return '<div class="card" id="duTn"><h2>1-gegen-1: Wer macht mit?</h2><div class="muted">' + (m[TK()] ? 'Teilnehmer ändern (z. B. Nachzügler).' : 'Anwesende Kinder auswählen – nur sie werden für die Duelle eingeteilt.') + '</div>' +
       '<div class="row" style="gap:6px;margin:8px 0"><button class="btn small sec" id="tnAlle">Alle</button><button class="btn small sec" id="tnKeine">Keine</button></div><div class="kidgrid">' +
       alle.map(function (p) { var on = sel.indexOf(p.id) >= 0; return '<label class="kid" style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:' + (on ? 1 : 0.45) + '"><input type="checkbox" data-tn="' + p.id + '"' + (on ? ' checked' : '') + ' style="position:absolute;opacity:0">' + avatar(p, 'm') + '<span>' + (on ? '✓ ' : '') + esc(E.firstName(p.name)) + '</span></label>'; }).join('') +
-      '</div><button class="btn" id="tnOk" style="margin-top:8px">' + (m.duellTeilnehmer ? 'Übernehmen' : 'Test starten') + '</button>' + (m.duellTeilnehmer ? '<button class="btn sec" id="tnAbbr">Abbrechen</button>' : '') + '</div>';
+      '</div><button class="btn" id="tnOk" style="margin-top:8px">' + (m[TK()] ? 'Übernehmen' : 'Test starten') + '</button>' + (m[TK()] ? '<button class="btn sec" id="tnAbbr">Abbrechen</button>' : '') + '</div>';
   }
   function bindDuellTeilnehmer(m) {
     if (!$('#duTn')) return;
@@ -703,8 +814,8 @@
     $('#tnOk').addEventListener('click', function () {
       var L = box.filter(function (c) { return c.checked; }).map(function (c) { return +c.getAttribute('data-tn'); });
       if (L.length < 2) { toast('Mindestens zwei Kinder auswählen'); return; }
-      m.duellTeilnehmer = L; state.duellTnEdit = false; state.duell = { a: null, v: null };
-      var n = DT.naechstesPaar(m.duelle, L, null, null, DT.ZIEL); if (n) state.duell = { a: n.a, v: n.v };
+      m[TK()] = L; state.duellTnEdit = false; if (TK() === 'duellTeilnehmer') state.duell = { a: null, v: null };
+      if (TK() === 'duellTeilnehmer') { var n = DT.naechstesPaar(m.duelle, L, null, null, DT.ZIEL); if (n) state.duell = { a: n.a, v: n.v }; } else state.mw = { pid: L[0] };
       commit(); keepScroll(render);
     });
     if ($('#tnAbbr')) $('#tnAbbr').addEventListener('click', function () { state.duellTnEdit = false; keepScroll(render); });
@@ -770,7 +881,7 @@
         $$('[data-add]', root).forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-add'); m.tests.push(id); state.messTest = id; commit(); closeSheet(); keepScroll(render); }); });
       });
     });
-    bindDuell(m);
+    bindDuell(m); if (MT && !/^duell/.test(state.messTest || '')) bindMw(m, M.testById(data, state.messTest));
     if (!$('#mtGrid')) { if ($('#mtDel')) bindDel(); return; }
     var t = M.testById(data, state.messTest), inputs = $$('.mv');
     inputs.forEach(function (el, idx) {
@@ -1013,6 +1124,7 @@
       (closed ? '<div class="muted">Vorschlag (Aufstellung und Auswechseloptionen) eingefroren am ' + esc(new Date(st.snapshot.erstellt).toLocaleString('de-DE')) + '. Spätere Notenänderungen ändern ihn nicht.</div><button class="btn sec" id="dOpen">Wieder öffnen</button>'
         : '<div class="muted">Der Vorschlag rechnet live mit den aktuellen Noten und Zusagen. „Abschließen“ friert ihn für diesen Spieltag ein.</div><button class="btn" id="dClose">Spieltag abschließen</button>') +
       '<button class="btn sec" id="dAuf">Vorgeschlagene Aufstellung ansehen</button>' +
+      '<button class="btn sec" id="dSr">🏁 Schiedsrichter-Modus</button>' +
       '<button class="btn" id="dLive">' + (!st.live || st.live.phase === 'vor' ? '▶ Live-Modus: Spiel starten' : (st.live.phase === 'ende' ? '📄 Spielzusammenfassung' : '⏱ Live-Spiel läuft – öffnen')) + '</button>' +
       '<button class="btn sec" id="dSpiel">Spielbericht: Startelf, Ereignisse' + (erg ? ' (' + erg + ')' : '') + '</button>' +
       '<button class="btn sec" id="dBew">Spielbewertung' + (anzahlBewertet(st) ? ' (' + anzahlBewertet(st) + ' bewertet)' : '') + '</button></div>';
@@ -1068,6 +1180,7 @@
     $('#dAuf').addEventListener('click', function () { setAktiv(st.id); setTab('aufstellung'); });
     $('#dBew').addEventListener('click', function () { go('bewertung'); });
     $('#dSpiel').addEventListener('click', function () { go('spiel'); });
+    $('#dSr').addEventListener('click', function () { go('sr'); });
     $('#dLive').addEventListener('click', function () { go(st.live && st.live.phase === 'ende' ? 'zusammenfassung' : 'live'); });
     $('#dDel').addEventListener('click', function () {
       if (!confirm('Spieltag „' + M.titel(st) + '“ mit Zusagen, Spielbericht, Spielbewertungen und eingefrorener Aufstellung löschen?')) return;
@@ -1496,6 +1609,7 @@
     if (L.phase === 'h2') h += '<button class="btn big warn" id="lvStop">⏹ Abpfiff</button>';
     if (L.phase === 'ende') h += '<button class="btn big" id="lvSumm">📄 Spielzusammenfassung</button><button class="btn sec" id="lvWeiter">Abpfiff rückgängig – weiterspielen</button>';
     h += '</div>';
+    h += '<button class="btn sec" id="lvSr">🏁 Schiedsrichter-Modus (gleiche Uhr)</button>';
     h += wtKarte(st);
     if (L.phase !== 'vor') h += '<div class="card"><div class="row qa"><button class="btn big" data-neu="tor">⚽ Tor</button><button class="btn big sec" data-neu="gegentor">🥅 Gegentor</button></div><div class="row qa"><button class="btn big" data-neu="wechsel">🔁 Wechsel</button><button class="btn big warn" data-neu="fehler">⚠ Abwehrfehler</button></div><div class="row qa"><button class="btn sec" data-neu="notiz">📝 Notiz</button><button class="btn sec" data-neu="karte">🟨 Karte / Verletzung</button></div><div class="row qa"><button class="btn sec" id="lvGeg">🔎 Gegner-Notiz</button></div></div>';
     if (L.phase === 'vor') h += fsKarte(st);
@@ -1516,6 +1630,7 @@
     if ($('#lvStop')) $('#lvStop').addEventListener('click', function () { if (!confirm('Abpfiff? Danach entsteht die Spielzusammenfassung (weiter bearbeitbar).')) return; akt('stop'); go('zusammenfassung'); });
     if ($('#lvWeiter')) $('#lvWeiter').addEventListener('click', function () { akt('weiter'); });
     if ($('#lvSumm')) $('#lvSumm').addEventListener('click', function () { go('zusammenfassung'); });
+    if ($('#lvSr')) $('#lvSr').addEventListener('click', function () { go('sr'); });
     bindNeuKnoepfe(st); bindTimeline(st);
     if (L.phase === 'vor') { fsBinden(st); return; }
     $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
@@ -1553,13 +1668,128 @@
   }
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && data) { wachHalten(); if (state.sub === 'live') keepScroll(render); } });
 
+
+  // ---------- Schiedsrichter-Modus (ab 2.8) ----------
+  var SR = window.PSVSchiri;
+  function srMinute(st) { var m = jetztMinute(st); return E.isNum(m) ? m : letzteMinute(st); }
+  function srTeamName(st, t) { return SR.teams(st)[t]; }
+  function srStand(st) { var b = M.bericht(data, st), wir = SR.unserTeam(st); return wir === 'heim' ? [b.tore, b.gegentore] : [b.gegentore, b.tore]; }
+  var PH = { vor: 'vor Anpfiff', h1: '1. Halbzeit', pause: 'Halbzeitpause', h2: '2. Halbzeit', ende: 'Spielende' };
+  function viewSr() {
+    var st = M.getSpieltag(data, state.stId), x = SR.sr(st), L = M.live(st), T = SR.teams(st), u = SR.uhr(st, Date.now()), sd = srStand(st);
+    var h = '<div class="card livebar ' + L.phase + '"><div class="sc"><div class="team">' + esc(T.heim) + '</div><div class="res"><b>' + sd[0] + ' : ' + sd[1] + '</b></div><div class="team">' + esc(T.gast) + '</div></div>' +
+      '<div class="clock" id="srUhr" style="font-size:64px">' + SR.uhrText(u.rest) + '</div><div class="phase" id="srPhase">' + PH[L.phase] + (L.phase === 'h1' || L.phase === 'h2' ? ' · ' + (M.liveMinute(st, Date.now())) + '. Min.' : '') + '</div>';
+    if (L.phase === 'vor') h += '<div class="row" style="justify-content:center;gap:8px"><span>Halbzeit</span><button class="btn small sec" id="srHzM">−</button><b>' + L.halbzeit + ' Min.</b><button class="btn small sec" id="srHzP">+</button></div><button class="btn big" id="srAn">▶ Anpfiff</button>';
+    if (L.phase === 'h1') h += '<div class="row"><button class="btn big" id="srHalb">⏸ Halbzeit</button><button class="btn big warn" id="srAb">⏹ Abpfiff</button></div>';
+    if (L.phase === 'pause') h += '<div class="row"><button class="btn big" id="srZweite">▶ 2. Halbzeit</button><button class="btn big warn" id="srAb">⏹ Abpfiff</button></div>';
+    if (L.phase === 'h2') h += '<button class="btn big warn" id="srAb">⏹ Abpfiff</button>';
+    if (L.phase === 'h1' || L.phase === 'h2') { var k = 'h' + u.halbzeit; h += '<div class="row" style="gap:6px"><button class="btn sec" id="srUnt">' + (u.laeuftUnterbrechung ? '▶ Unterbrechung beenden' : '⏯ Unterbrechung') + '</button><button class="btn small sec" id="srNsM">−</button><span style="white-space:nowrap">+' + (x.nachspiel[k] || 0) + ' Min.' + (u.vorschlagNachspiel ? ' <small>(Vorschlag ' + u.vorschlagNachspiel + ')</small>' : '') + '</span><button class="btn small sec" id="srNsP">+</button></div>'; }
+    if (L.phase === 'ende') h += '<button class="btn sec" id="srWeiter">Abpfiff rückgängig</button>';
+    h += '<div class="row" style="gap:8px;justify-content:center;margin-top:6px"><label class="muted">Warnton vor Halbzeitende</label>' + sel('srWarn', x.warnMin, [[0, 'aus'], [1, '1 Min.'], [2, '2 Min.'], [5, '5 Min.']]) + '</div></div>';
+    h += '<div class="card" id="srStrafen"></div>';
+    h += '<div class="card"><div class="row qa"><button class="btn big" data-srtor="heim">⚽ Tor ' + esc(T.heim) + '</button><button class="btn big" data-srtor="gast">⚽ Tor ' + esc(T.gast) + '</button></div>' +
+      '<div class="row qa"><button class="btn warn" id="srStrafe">🟨 Persönliche Strafe</button><button class="btn sec" id="srVerl">🩹 Verletzung</button></div>' +
+      '<div class="row qa"><button class="btn sec" data-srw="heim">🔁 Wechsel Heim (' + (x.wechsel.heim || 0) + ')</button><button class="btn sec" data-srw="gast">🔁 Wechsel Gast (' + (x.wechsel.gast || 0) + ')</button></div>' +
+      '<button class="btn sec" id="srVork">📝 Vorkommnis (Fair-Play, Zuschauer, Platz, Abbruch …)</button></div>';
+    var b = SR.bericht(M, data, st);
+    h += '<div class="card"><h2>Ereignisse</h2>' + (b.tore.length ? b.tore.map(function (t) { return '<div class="evt">' + (E.isNum(t.minute) ? t.minute + '′ ' : '') + '⚽ ' + t.stand + ' ' + esc(srTeamName(st, t.team)) + (t.nr ? ' Nr. ' + esc(t.nr) : '') + (t.name ? ' ' + esc(t.name) : '') + '</div>'; }).join('') : '') +
+      x.ereignisse.filter(function (e) { return e.typ !== 'torinfo'; }).map(function (e) { return '<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--bd);padding:4px 0"><span>' + (E.isNum(e.minute) ? e.minute + '′ ' : '') + esc(e.typ === 'strafe' ? SR.STRAFEN[e.art] : e.kategorie) + ' · ' + esc(srTeamName(st, e.team) || '') + (e.nr ? ' Nr. ' + esc(e.nr) : '') + (e.name ? ' ' + esc(e.name) : '') + (e.grund || e.text ? ' – ' + esc(e.grund || e.text) : '') + '</span><button class="btn small sec" data-srdel="' + esc(e.id) + '">✕</button></div>'; }).join('') +
+      (b.tore.length || x.ereignisse.length ? '' : '<div class="muted">Noch keine Ereignisse.</div>') + '<div class="muted" style="margin-top:4px">Tore der eigenen Mannschaft und Gegentore stehen auch im Spielbericht (dort bearbeiten/löschen).</div></div>';
+    h += '<div class="card"><h2>Spieldaten</h2><div class="grid2"><div><label class="f">Schiedsrichter/in</label><input type="text" data-srf="schiri.name" value="' + esc(x.schiri.name) + '"></div><div><label class="f">Art</label>' + sel('srArt', x.schiri.art, [['neutral', 'neutral'], ['verein', 'Vereinsschiedsrichter/in']]) + '</div>' +
+      '<div><label class="f">Assistent/in 1</label><input type="text" data-srf="schiri.assistent1" value="' + esc(x.schiri.assistent1) + '"></div><div><label class="f">Assistent/in 2</label><input type="text" data-srf="schiri.assistent2" value="' + esc(x.schiri.assistent2) + '"></div>' +
+      '<div><label class="f">Spielnummer (fussball.de)</label><input type="text" data-srf="spielnummer" value="' + esc(x.spielnummer) + '"></div><div><label class="f">Spielklasse</label><input type="text" data-srf="spielklasse" placeholder="z. B. D-Junioren Kreisliga B Gruppe 6" value="' + esc(x.spielklasse) + '"></div>' +
+      '<div><label class="f">Platz</label><input type="text" data-srf="platz" value="' + esc(x.platz || ((wtOrt(st) || {}).name || '')) + '"></div><div><label class="f">Spielerzahl Heim / Gast</label><div class="row"><input type="number" min="0" data-srn="heim" value="' + (E.isNum(x.spielerzahl.heim) ? x.spielerzahl.heim : '') + '"><input type="number" min="0" data-srn="gast" value="' + (E.isNum(x.spielerzahl.gast) ? x.spielerzahl.gast : '') + '"></div></div>' +
+      '<div><label class="f">Verantwortliche Heim</label><input type="text" data-srf="offizielle.heim" value="' + esc(x.offizielle.heim) + '"></div><div><label class="f">Verantwortliche Gast</label><input type="text" data-srf="offizielle.gast" value="' + esc(x.offizielle.gast) + '"></div></div>' +
+      '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="srPass"' + (x.passkontrolle ? ' checked' : '') + '> Pass- / Spielberechtigung kontrolliert</label>' +
+      '<label class="f">Besondere Vorkommnisse / Bemerkungen</label><textarea data-srf="besonderes" rows="3">' + esc(x.besonderes) + '</textarea></div>';
+    h += '<div class="card"><h2>Schiedsrichterbericht</h2><button class="btn" id="srPdf">Als PDF speichern / drucken</button><button class="btn sec" id="srTeilen">Teilen (HTML-Datei)</button><div class="muted">Hilfe für die Spielleitung im Jugendbereich. Maßgeblich ist der offizielle Online-Spielbericht im DFBnet.</div></div>';
+    return h;
+  }
+  function srStrafenHtml(st) {
+    var A = SR.strafenAktiv(st, Date.now()); if (!A.length) return '<div class="muted">Keine laufende Zeitstrafe.</div>';
+    return '<h2>Laufende Zeitstrafen</h2>' + A.map(function (a) { var e = a.ev; return '<div class="row" style="justify-content:space-between;font-size:18px"><span>' + esc(srTeamName(st, e.team)) + (e.nr ? ' Nr. ' + esc(e.nr) : '') + (e.name ? ' ' + esc(e.name) : '') + '</span><b>' + SR.uhrText(a.rest) + '</b></div>'; }).join('');
+  }
+  function srBerichtHtml(st) { return SR.html(SR.bericht(M, data, st)); }
+  function srBerichtPdf(st) { var b = SR.bericht(M, data, st), html = SR.html(b), br = window.AndroidBridge; if (br && br.printHtml) { br.printHtml(SR.dateiname(b, 'pdf').replace(/\.pdf$/, ''), html); return; } webDrucken(html); }
+  function srSpieler(st, team, cb, titel, extra) {   // eigene Mannschaft: Kind wählen; Gegner: Rückennummer
+    var wir = team === SR.unserTeam(st);
+    var h = '<h3>' + esc(titel) + ' – ' + esc(srTeamName(st, team)) + '</h3><div class="bwl">Minute</div><input type="number" id="srMin" min="0" value="' + (E.isNum(srMinute(st)) ? srMinute(st) : '') + '">' + (extra || '');
+    h += wir ? '<div class="bwl">Spieler/in</div>' + pickGrid('srP', teilnehmerIds(st), null, '<button data-v="" class="leer on">ohne Namen</button>') : '<div class="grid2"><div><div class="bwl">Rückennummer</div><input type="text" inputmode="numeric" id="srNr"></div><div><div class="bwl">Name (optional)</div><input type="text" id="srNm"></div></div>';
+    h += '<button class="btn" id="srOk">Speichern</button>';
+    var pid = null;
+    openSheet(h, function (root) {
+      if (wir) bindPick(root, 'srP', function (v) { pid = v; });
+      $('#srOk', root).addEventListener('click', function () { var mi = parseInt($('#srMin', root).value, 10); cb({ minute: isNaN(mi) ? null : mi, pid: pid, nr: wir ? '' : ($('#srNr', root).value || '').trim(), name: wir ? '' : ($('#srNm', root).value || '').trim(), root: root }); closeSheet(); commit(); keepScroll(render); });
+    });
+  }
+  function srTeamWahl(st, titel, cb) { var T = SR.teams(st); openSheet('<h3>' + esc(titel) + '</h3><button class="btn" data-tw="heim">' + esc(T.heim) + ' (Heim)</button><button class="btn" data-tw="gast">' + esc(T.gast) + ' (Gast)</button>', function (root) { $$('[data-tw]', root).forEach(function (b) { b.addEventListener('click', function () { cb(b.getAttribute('data-tw')); }); }); }); }
+  var KARTE_VON = { gelb: 'Gelb', gelbrot: 'Rot', rot: 'Rot', zeit2: 'Zeitstrafe', zeit5: 'Zeitstrafe' };
+  function bindSr() {
+    var st = M.getSpieltag(data, state.stId), x = SR.sr(st), L = M.live(st);
+    function akt(a) { duAudioFreischalten(); if (M.liveAktion(st, a, Date.now())) { if (a === 'stop') st.live.zusammenfassung = M.zusammenfassungText(data, st); commit(); wachHalten(); keepScroll(render); } }
+    if ($('#srHzM')) { $('#srHzM').addEventListener('click', function () { L.halbzeit = Math.max(5, L.halbzeit - 5); commit(); keepScroll(render); }); $('#srHzP').addEventListener('click', function () { L.halbzeit = Math.min(45, L.halbzeit + 5); commit(); keepScroll(render); }); }
+    if ($('#srAn')) $('#srAn').addEventListener('click', function () { sichern('vor_live'); if (!M.spielbericht(st).startelf) M.startelfAusVorschlag(data, st); akt('start'); });
+    if ($('#srHalb')) $('#srHalb').addEventListener('click', function () { akt('halbzeit'); });
+    if ($('#srZweite')) $('#srZweite').addEventListener('click', function () { akt('zweite'); });
+    if ($('#srAb')) $('#srAb').addEventListener('click', function () { if (confirm('Abpfiff?')) akt('stop'); });
+    if ($('#srWeiter')) $('#srWeiter').addEventListener('click', function () { akt('weiter'); });
+    if ($('#srUnt')) $('#srUnt').addEventListener('click', function () { SR.unterbrechung(st, Date.now()); commit(); keepScroll(render); });
+    var nsk = 'h' + SR.uhr(st, Date.now()).halbzeit;
+    if ($('#srNsP')) { $('#srNsP').addEventListener('click', function () { x.nachspiel[nsk] = (x.nachspiel[nsk] || 0) + 1; commit(); keepScroll(render); }); $('#srNsM').addEventListener('click', function () { x.nachspiel[nsk] = Math.max(0, (x.nachspiel[nsk] || 0) - 1); commit(); keepScroll(render); }); }
+    $('#srWarn').addEventListener('change', function (e) { x.warnMin = +e.target.value; commit(); });
+    $('#srStrafen').innerHTML = srStrafenHtml(st);
+    $$('[data-srtor]').forEach(function (b) { b.addEventListener('click', function () {
+      var team = b.getAttribute('data-srtor'), wir = team === SR.unserTeam(st);
+      srSpieler(st, team, function (r) { if (wir) M.addTor(st, r.pid, null, r.minute); else { var g = M.addGegentor(st, r.minute, null); if (r.nr || r.name) SR.torInfo(st, { refId: g.id, nr: r.nr, name: r.name }); } toast('Tor eingetragen'); }, 'Tor');
+    }); });
+    $('#srStrafe').addEventListener('click', function () { srTeamWahl(st, 'Persönliche Strafe – Mannschaft', function (team) {
+      var art = 'gelb';
+      srSpieler(st, team, function (r) {
+        var ref = null; if (team === SR.unserTeam(st) && r.pid && KARTE_VON[art]) ref = M.addKarte(st, r.minute, r.pid, KARTE_VON[art]).id;
+        SR.strafe(st, { art: art, team: team, pid: r.pid, nr: r.nr, name: r.name, grund: ($('#srGrund', r.root) || {}).value || '', minute: r.minute, start: SR.ZEIT[art] ? Date.now() : null, refId: ref });
+        toast(SR.STRAFEN[art] + ' eingetragen');
+      }, 'Persönliche Strafe', '<div class="bwl">Strafe</div>' + segHtml('srArt2', art, Object.keys(SR.STRAFEN).map(function (k) { return [k, SR.STRAFEN[k]]; }), 'small') + '<div class="bwl">Grund</div><input type="text" id="srGrund" placeholder="z. B. Foulspiel, Unsportlichkeit, Ballwegschlagen">');
+      bindSeg('srArt2', function (v) { art = v; });
+    }); });
+    $('#srVerl').addEventListener('click', function () { srTeamWahl(st, 'Verletzung – Mannschaft', function (team) {
+      srSpieler(st, team, function (r) { var ref = null; if (team === SR.unserTeam(st) && r.pid) ref = M.addKarte(st, r.minute, r.pid, 'Verletzung').id; SR.vorkommnis(st, { kategorie: 'Verletzung', team: team, pid: r.pid, nr: r.nr, name: r.name, text: ($('#srVtx', r.root) || {}).value || '', minute: r.minute, refId: ref }); toast('Verletzung eingetragen'); }, 'Verletzung', '<div class="bwl">Beschreibung (optional)</div><input type="text" id="srVtx">');
+    }); });
+    $$('[data-srw]').forEach(function (b) { b.addEventListener('click', function () { var t = b.getAttribute('data-srw'); x.wechsel[t] = (x.wechsel[t] || 0) + 1; commit(); keepScroll(render); toast('Wechsel gezählt'); }); });
+    $('#srVork').addEventListener('click', function () {
+      var kat = 'Fair-Play';
+      openSheet('<h3>Vorkommnis</h3>' + segHtml('srKat', kat, SR.KATEGORIEN.filter(function (k) { return k !== 'Verletzung'; }).map(function (k) { return [k, k]; }), 'small') + '<div class="bwl">Minute</div><input type="number" id="srVMin" value="' + (E.isNum(srMinute(st)) ? srMinute(st) : '') + '"><div class="bwl">Beschreibung</div><textarea id="srVText"></textarea><button class="btn" id="srVOk">Speichern</button>', function (root) {
+        bindSeg('srKat', function (v) { kat = v; });
+        $('#srVOk', root).addEventListener('click', function () { var mi = parseInt($('#srVMin', root).value, 10); SR.vorkommnis(st, { kategorie: kat, text: $('#srVText', root).value.trim(), minute: isNaN(mi) ? null : mi }); closeSheet(); commit(); keepScroll(render); });
+      });
+    });
+    $$('[data-srdel]').forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-srdel'), e = x.ereignisse.filter(function (z) { return z.id === id; })[0]; if (e && e.refId) M.entferneEreignis(st, e.refId); SR.entfernen(st, id); commit(); keepScroll(render); }); });
+    $$('[data-srf]').forEach(function (el) { el.addEventListener('change', function () { var k = el.getAttribute('data-srf').split('.'); if (k.length === 2) x[k[0]][k[1]] = el.value.trim(); else x[k[0]] = el.value; commit(); }); });
+    $$('[data-srn]').forEach(function (el) { el.addEventListener('change', function () { var v = parseInt(el.value, 10); x.spielerzahl[el.getAttribute('data-srn')] = isNaN(v) ? null : v; commit(); }); });
+    $('#srArt').addEventListener('change', function (e) { x.schiri.art = e.target.value; commit(); });
+    $('#srPass').addEventListener('change', function (e) { x.passkontrolle = e.target.checked; commit(); });
+    if (!x.platz && $('[data-srf="platz"]').value) x.platz = $('[data-srf="platz"]').value;
+    $('#srPdf').addEventListener('click', function () { srBerichtPdf(st); });
+    $('#srTeilen').addEventListener('click', function () { var b = SR.bericht(M, data, st), html = SR.html(b), name = SR.dateiname(b, 'html'), br = window.AndroidBridge;
+      if (br && br.shareFile) { br.shareFile(name, html, 'text/html'); return; } var bl = new Blob([html], { type: 'text/html' });
+      try { var f = new File([bl], name, { type: 'text/html' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: 'Schiedsrichterbericht' }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(name, bl); }); return; } } catch (e) { } webDownload(name, bl); });
+  }
+  var srSchon = {};
+  setInterval(function () {
+    if (state.sub !== 'sr' || !data) return;
+    var st = M.getSpieltag(data, state.stId); if (!st) return;
+    var now = Date.now(), u = SR.uhr(st, now), c = $('#srUhr'); if (c) { c.textContent = SR.uhrText(u.rest); c.style.color = u.rest < 0 ? '#FFB300' : ''; }
+    var p = $('#srPhase'); if (p && st.live && (st.live.phase === 'h1' || st.live.phase === 'h2')) p.textContent = PH[st.live.phase] + ' · ' + M.liveMinute(st, now) + '. Min.';
+    var sp = $('#srStrafen'); if (sp) sp.innerHTML = srStrafenHtml(st);
+    var key = st.id + (st.live ? (st.live.h1Start || '') + '|' + (st.live.h2Start || '') : ''), sch = srSchon[key] || (srSchon[key] = {});
+    SR.signale(st, now, sch).forEach(function (sg) { if (sg === 'ende') duTon(1200, 2400); else { duTon(200, 2900); setTimeout(function () { duTon(200, 2900); }, 350); } });
+  }, 500);
   // ---------- Spielzusammenfassung ----------
   function viewZusammenfassung() {
     var st = M.getSpieltag(data, state.stId), z = M.zusammenfassung(data, st), b = M.bericht(data, st);
     var h = '<div class="card score"><div class="sc"><div class="team">PSV Wesel-Lackhausen</div><div class="res"><b id="erg">' + z.tore + ' : ' + z.gegentore + '</b></div><div class="team">' + esc(z.gegner) + '</div></div><div class="muted" style="text-align:center">' + esc(z.titel) + (z.halbzeit ? ' · 2 × ' + z.halbzeit + ' Min.' : '') + ' · Spielzeit ' + z.spielzeit + ' Min.</div></div>';
     var kr = korrekturVon(st);
     if (st.ohneWertung || kr) h += '<div class="card owcard">' + (st.ohneWertung ? owChip(st) + ' <span class="muted">zählt nicht für Bilanz, Form und Vorschläge</span>' : '') + (kr ? '<div class="muted" style="margin-top:4px">Nach offiziellem Spielbericht korrigiert (' + esc(M.fmtDatum(kr.angewandt.slice(0, 10))) + ')</div>' : '') + '</div>';
-    h += '<div class="card"><h2>Exportieren</h2><button class="btn" id="zsEltern">Elternbericht (Bild / PDF)</button><button class="btn sec" id="zsShare">Als Text teilen (WhatsApp, Mail …)</button><button class="btn sec" id="zsPdf">Als PDF speichern / drucken</button><button class="btn sec" id="zsHtml">Als HTML-Datei speichern</button><button class="btn sec" id="zsGeg">🔎 Gegner-Notiz hinzufügen</button><div class="muted">Die Zusammenfassung ist außerdem im JSON-Export enthalten.</div></div>';
+    h += '<div class="card"><h2>Exportieren</h2><button class="btn" id="zsEltern">Elternbericht (Bild / PDF)</button><button class="btn sec" id="zsSr">Schiedsrichterbericht (PDF)</button><button class="btn sec" id="zsShare">Als Text teilen (WhatsApp, Mail …)</button><button class="btn sec" id="zsPdf">Als PDF speichern / drucken</button><button class="btn sec" id="zsHtml">Als HTML-Datei speichern</button><button class="btn sec" id="zsGeg">🔎 Gegner-Notiz hinzufügen</button><div class="muted">Die Zusammenfassung ist außerdem im JSON-Export enthalten.</div></div>';
     h += timelineHtml(st, b);
     h += '<div class="card"><h2>Aufstellung Anpfiff → Abpfiff</h2><table><thead><tr><th>Pos.</th><th>Anpfiff</th><th>Abpfiff</th></tr></thead><tbody>' + z.startelf.map(function (x, i) { var e = z.endelf[i] || {}; return '<tr><td><b>' + esc(x.pos) + '</b></td><td>' + esc(x.name) + '</td><td>' + (e.name !== x.name ? '<b>' + esc(e.name) + '</b>' : esc(e.name)) + '</td></tr>'; }).join('') + '</tbody></table></div>';
     if (z.wechsel.length) h += '<div class="card"><h2>Wechsel</h2><table><tbody>' + z.wechsel.map(function (w) { return '<tr><td class="c">' + (E.isNum(w.minute) ? w.minute + '′' : '–') + '</td><td>' + esc(w.rein) + ' für ' + esc(w.raus) + '</td></tr>'; }).join('') + '</tbody></table></div>';
@@ -1587,6 +1817,7 @@
       webDownload(name, new Blob([html], { type: 'text/html' })); toast('„' + name + '“ gespeichert');
     });
     $('#zsEltern').addEventListener('click', function () { elternBericht(st); });
+    $('#zsSr').addEventListener('click', function () { srBerichtPdf(st); });
     $('#zsPdf').addEventListener('click', function () {
       var html = M.zusammenfassungHtml(data, st);
       if (br && br.printHtml) { br.printHtml(dateiName(st, 'pdf').replace(/\.pdf$/, ''), html); return; }
