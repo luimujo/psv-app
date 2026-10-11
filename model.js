@@ -115,6 +115,7 @@
     d.vorschlaegeIgnoriert = d.vorschlaegeIgnoriert || {};
     d.team = 'PSV Wesel-Lackhausen';   // Vereinsname (ab 1.3; ältere Dateien trugen noch den Sponsornamen)
     if (!Array.isArray(d.messkatalog)) d.messkatalog = standardKatalog();   // ab 1.4
+    standardKatalog().forEach(function (t) { if (!testById(d, t.id)) d.messkatalog.push(t); });   // ab 2.7: neue Standardtests ergänzen
     if (!Array.isArray(d.messungen)) d.messungen = [];
     d.messungen.forEach(function (m) { m.werte = m.werte || {}; m.tests = m.tests || []; });
     gegnerMigrieren(d);   // ab 1.6: Gegner-Datei, Spieltage verknüpfen
@@ -441,6 +442,7 @@
     var o = {}; KLASSEN.forEach(function (k, i) { var d = i - 2; o[k] = u11.map(function (c) { return Number((c + d * schritt).toFixed(nk === undefined ? 2 : nk)); }); }); return o;
   }
   function gleich(c) { var o = {}; KLASSEN.forEach(function (k) { o[k] = c.slice(); }); return o; }
+  var DUELL_TXT = 'Feld 10 m breit × 15 m lang (U12/U13; U9–U11: 8 × 12 m). Angreifer startet mit Ball an der Grundlinie, Verteidiger passt ihm vom anderen Ende zu und läuft an. Angreifer hat 8 Sekunden, um über die gegnerische Endlinie zu dribbeln (oder in eines von zwei Minitoren). Je Kind 6 Duelle pro Rolle, Gegner wechseln. Ergebnis = Erfolgsquote in % (Sieg 1, Zeit abgelaufen ½, Niederlage 0), optional nach Stärke des Gegners gewichtet.';
   var KAT = [   // id, Name, Einheit, Richtung, Gruppe, Versuche, Regel, Bänder, Zuordnung Feld/TW [[Zeile, Gewicht]], Beschreibung
     ['sprint5', 'Antritt 5 m', 's', 'kleiner', 'Schnelligkeit', 2, 'best', baender([1.5, 1.4, 1.3, 1.2], -0.03), [[33, 1]], [[36, 0.6]], 'Hochstart, Zeit ab Bewegungsbeginn (Lichtschranke oder 2 Stoppuhren).'],
     ['sprint10', 'Sprint 10 m', 's', 'kleiner', 'Schnelligkeit', 2, 'best', baender([2.45, 2.3, 2.15, 2.0], -0.05), [[34, 0.6], [33, 0.4]], [[36, 0.5]], 'Hochstart. Handzeiten sind ca. 0,1–0,2 s schneller – immer gleich messen.'],
@@ -461,6 +463,8 @@
     ['tw_reaktion', 'TW-Reaktion (Bälle gehalten)', 'Treffer von 10', 'groesser', 'Torwart', 1, 'best', gleich([3, 5, 7, 9]), [], [[33, 1], [16, 0.3]], 'Reaktionsbälle aus 6–8 m (geworfen/geschossen), gefangen oder sicher abgewehrt.'],
     ['tw_abschlag', 'TW-Abschlagweite', 'm', 'groesser', 'Torwart', 3, 'best', baender([20, 26, 32, 38], 3, 0), [], [[19, 1]], 'Abschlag/Abstoß vom Boden, Weite bis zum ersten Aufsprung.'],
     ['tw_abwurf', 'TW-Abwurf-Genauigkeit', 'Treffer von 10', 'groesser', 'Torwart', 1, 'best', gleich([3, 5, 7, 9]), [], [[18, 1]], 'Abwurf in eine 3 × 3 m Zone in 15 m Entfernung.'],
+    ['duell_def', '1-gegen-1 Defensiv', '% Erfolg', 'groesser', 'Zweikampf', 1, 'best', gleich([25, 40, 55, 70]), [[29, 0.8], [36, 0.5], [28, 0.2]], [], DUELL_TXT + ' Wertung Verteidiger: Ball erobert oder aus dem Feld gespielt = Sieg, Zeit abgelaufen = halber Punkt. Passt vor allem zu IV, LV, RV und 6.'],
+    ['duell_off', '1-gegen-1 Offensiv', '% Erfolg', 'groesser', 'Zweikampf', 1, 'best', gleich([25, 40, 55, 70]), [[19, 0.8], [16, 0.2], [40, 0.2]], [], DUELL_TXT + ' Wertung Angreifer: über die Endlinie gedribbelt bzw. ins Minitor = Sieg, Zeit abgelaufen = halber Punkt. Passt vor allem zu ST, LA/RA, LM/RM und 8.'],
     ['groesse', 'Körpergröße', 'cm', 'groesser', 'Körper', 1, 'best', null, [], [], 'Nur zur Information (keine Note, kein Vorschlag).'],
     ['gewicht', 'Körpergewicht', 'kg', 'groesser', 'Körper', 1, 'best', null, [], [], 'Nur zur Information (keine Note, kein Vorschlag).']
   ];
@@ -541,6 +545,49 @@
       map.forEach(function (e) { var r = String(e[0]); if (!(e[1] > 0)) return; (out[r] = out[r] || []).push({ test: t, wert: last.wert, score: last.note, w: e[1] * rec, datum: last.datum, sessionId: last.messung }); });
     });
     return out;
+  }
+  // Teilnehmer eines Spieltags (ab 2.7): zugesagt, Startelf, Wechsel, Ereignisse, Bewertungen (+ extra); Reihenfolge wie K, leer → K
+  function teilnehmer(st, K, extra, gibts) {
+    var T = {}, s = spielbericht(st), add = function (id) { if (id) T[id] = true; };
+    K.forEach(function (id) { if (st.zusagen[id] === 'Zugesagt') add(id); });
+    startelfListe(st).forEach(function (x) { add(x.pid); });
+    s.wechsel.forEach(function (w) { add(w.rein); add(w.raus); }); s.tore.forEach(function (t) { add(t.pid); add(t.assist); });
+    s.fehler.forEach(function (f) { add(f.pid); }); s.gegen.forEach(function (g) { add(g.fehlerPid); }); s.karten.forEach(function (k) { add(k.pid); });
+    s.notizen.forEach(function (n) { add(n.pid); }); s.tausch.forEach(function (x) { add(x.a); add(x.b); });
+    Object.keys(st.bewertungen || {}).forEach(function (id) { add(+id); }); (extra || []).forEach(add);
+    var L = K.filter(function (id) { return T[id]; }); Object.keys(T).forEach(function (id) { id = +id; if (L.indexOf(id) < 0 && (!gibts || gibts(id))) L.push(id); });
+    return L.length ? L : K.slice();
+  }
+  // ---------- 1-gegen-1 (ab 2.7): Duelle je Termin → Erfolgsquote je Rolle ----------
+  // m.duelle = [{ id, a: Angreifer, v: Verteidiger, erg: 'A' | 'V' | 'Z' (Zeit abgelaufen) }], m.duellSumme = { pid: { off: {s,u,n}, def: {s,u,n} } }
+  function duellHinzu(m, a, v, erg) { var x = { id: eid(), a: a, v: v, erg: erg }; (m.duelle = m.duelle || []).push(x); return x; }
+  function duellEntfernen(m, id) { m.duelle = (m.duelle || []).filter(function (x) { return x.id !== id; }); }
+  function duellBilanz(m, noteFn) {   // pid → { off: {s,u,n,punkte,gewicht}, def: ... }
+    var out = {}, gew = !!m.duellGewichtet && typeof noteFn === 'function';
+    function b(pid, r) { var o = out[pid] = out[pid] || {}; return o[r] = o[r] || { s: 0, u: 0, n: 0, punkte: 0, anzahl: 0 }; }
+    function buch(pid, r, wert, gegner) {
+      var x = b(pid, r); if (wert === 1) x.s++; else if (wert === 0) x.n++; else x.u++;
+      var p = wert; if (gew) { var g = noteFn(gegner); if (isNum(g)) p = Math.max(0, Math.min(1, wert + 0.1 * (g - 3))); }
+      x.punkte += p; x.anzahl++;
+    }
+    (m.duelle || []).forEach(function (x) {
+      if (!x.a || !x.v) return;
+      var wa = x.erg === 'A' ? 1 : x.erg === 'V' ? 0 : 0.5;
+      buch(x.a, 'off', wa, x.v); buch(x.v, 'def', 1 - wa, x.a);
+    });
+    Object.keys(m.duellSumme || {}).forEach(function (pid) {
+      ['off', 'def'].forEach(function (r) { var z = m.duellSumme[pid][r]; if (!z) return; var x = b(+pid, r), s = +z.s || 0, u = +z.u || 0, n = +z.n || 0; x.s += s; x.u += u; x.n += n; x.punkte += s + u / 2; x.anzahl += s + u + n; });
+    });
+    Object.keys(out).forEach(function (pid) { ['off', 'def'].forEach(function (r) { var x = out[pid][r]; if (x) x.quote = x.anzahl ? E.xround(100 * x.punkte / x.anzahl, 0) : null; }); });
+    return out;
+  }
+  function duellAuswerten(m, noteFn) {   // Quoten als Messwerte eintragen; Kinder ohne Duelle behalten ihre direkt eingegebenen Werte
+    var B = duellBilanz(m, noteFn), vorher = m.duellPids || [], jetzt = [];
+    Object.keys(B).forEach(function (pid) { pid = +pid; jetzt.push(pid);
+      [['off', 'duell_off'], ['def', 'duell_def']].forEach(function (r) { var x = B[pid][r[0]]; messwertSetzen(m, pid, r[1], 0, x && x.anzahl ? x.quote : null); }); });
+    vorher.forEach(function (pid) { if (jetzt.indexOf(pid) < 0) { messwertSetzen(m, pid, 'duell_off', 0, null); messwertSetzen(m, pid, 'duell_def', 0, null); } });
+    m.duellPids = jetzt; ['duell_off', 'duell_def'].forEach(function (t) { if (jetzt.length && m.tests.indexOf(t) < 0) m.tests.push(t); });
+    return B;
   }
   // ---------- Saison / Einsatzzeit ----------
   function saisonListe(d) { var o = {}; d.spieltage.forEach(function (st) { if (st.datum) o[saisonKey(st.datum, d.settings.saisonStartMonat)] = true; }); return Object.keys(o).sort().reverse(); }
@@ -951,7 +998,7 @@
     spielbericht: spielbericht, startelfAusVorschlag: startelfAusVorschlag, startelfListe: startelfListe, setFormation: setFormation, startelfDrop: startelfDrop, spielMinuten: spielMinuten,
     aufDemPlatz: aufDemPlatz, hatGespielt: hatGespielt, minutenFuer: minutenFuer, bericht: bericht, saison: saison, spielzeitVon: spielzeitVon,
     addTor: addTor, addGegentor: addGegentor, addNotiz: addNotiz, addKarte: addKarte, addTausch: addTausch, bearbeiteEreignis: bearbeiteEreignis, findeEreignis: findeEreignis,
-    KLASSEN: KLASSEN, standardKatalog: standardKatalog, testById: testById, altersklasse: altersklasse, saisonKey: saisonKey, bestWert: bestWert, messNote: messNote,
+    KLASSEN: KLASSEN, standardKatalog: standardKatalog, testById: testById, altersklasse: altersklasse, saisonKey: saisonKey, bestWert: bestWert, messNote: messNote, teilnehmer: teilnehmer, duellHinzu: duellHinzu, duellEntfernen: duellEntfernen, duellBilanz: duellBilanz, duellAuswerten: duellAuswerten,
     neueMessung: neueMessung, messungById: messungById, messwertSetzen: messwertSetzen, messErgebnis: messErgebnis, messVerlauf: messVerlauf, teamVergleich: teamVergleich,
     messQuellen: messQuellen, sortMessungen: sortMessungen, saisonListe: saisonListe, spieltageDerSaison: spieltageDerSaison, einsatzQuote: einsatzQuote,
     GEGNER_NOTIZ_TYPEN: GEGNER_NOTIZ_TYPEN, gegnerKey: gegnerKey, gegnerById: gegnerById, gegnerSuchen: gegnerSuchen, neuerGegner: neuerGegner, gegnerFuerName: gegnerFuerName, gegnerVerknuepfen: gegnerVerknuepfen, gegnerVon: gegnerVon,

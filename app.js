@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.6.1';
+  var APP_VERSION = '2.7';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -617,6 +617,7 @@
       '<div class="tchips scrollx" id="mtTests">' + m.tests.map(function (id) { var x = M.testById(data, id); if (!x) return ''; var n = messKinder(m, x).filter(function (p) { return M.messErgebnis(data, m, p.id, id); }).length; return '<button class="tchip' + (id === tid ? ' on' : '') + '" data-mt="' + esc(id) + '">' + esc(x.name) + '<small>' + n + ' ✓</small></button>'; }).join('') + '<button class="tchip add" id="mtAdd">+ Test</button></div></div>';
     if (!t) return h + '<div class="card empty">Kein Test gewählt.</div>';
     var tv = M.teamVergleich(data, m, tid);
+    if (tid === 'duell_off' || tid === 'duell_def') h += duellKarte(m);
     h += '<div class="card" id="mtGrid"><h2>' + esc(t.name) + ' <span class="muted">' + esc(t.einheit) + ' · ' + (t.richtung === 'kleiner' ? 'weniger ist besser' : 'mehr ist besser') + ' · ' + t.versuche + ' Versuch' + (t.versuche > 1 ? 'e' : '') + (t.versuche > 1 ? ', zählt ' + (t.regel === 'mittel' ? 'Mittel' : 'Bestwert') : '') + '</span></h2>' +
       '<div class="muted">' + esc(t.beschreibung || '') + '</div>';
     h += '<div class="mgrid">';
@@ -629,6 +630,45 @@
     h += '</div><div class="muted" id="mtTeam" style="margin-top:8px">' + teamTxt(t, tv) + '</div></div>';
     h += '<div class="card"><button class="btn sec" id="mtVerlaufAlle">Ergebnisse aller Tests (Übersicht)</button><button class="btn warn" id="mtDel">Messtermin löschen</button></div>';
     return h;
+  }
+  // ---------- 1-gegen-1-Erfassung (ab 2.7) ----------
+  function duellNote(pid) { var p = pById(pid), i = data.players.indexOf(p); return i >= 0 && R && R.evals[i] ? R.evals[i].gesamt : null; }
+  function duellKarte(m) {
+    var du = state.duell || (state.duell = { a: null, v: null }), ids = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; });
+    var B = M.duellBilanz(m, duellNote), L = (m.duelle || []).slice(-8).reverse();
+    var nm = function (pid) { var p = pById(pid); return p ? E.firstName(p.name) : '?'; };
+    var h = '<div class="card" id="duKarte"><h2>1-gegen-1 erfassen</h2><div class="muted">Duell für Duell: Angreifer und Verteidiger antippen, dann das Ergebnis. Die Erfolgsquote wird automatisch in beide Tests eingetragen.</div>' +
+      '<label class="f">Angreifer (mit Ball)</label>' + pickGrid('duA', ids, du.a) + '<label class="f">Verteidiger</label>' + pickGrid('duV', ids, du.v) +
+      '<div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-du="A">Angreifer gewinnt</button><button class="btn sec" data-du="Z">Zeit abgelaufen</button><button class="btn" data-du="V">Verteidiger gewinnt</button></div>' +
+      '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="duGew"' + (m.duellGewichtet ? ' checked' : '') + '> nach Stärke des Gegners gewichten (Gesamtnote)</label>';
+    if (L.length) h += '<h3>Letzte Duelle (' + (m.duelle || []).length + ')</h3>' + L.map(function (x) { return '<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--bd);padding:4px 0"><span>' + esc(nm(x.a)) + ' gegen ' + esc(nm(x.v)) + ' · <b>' + (x.erg === 'A' ? 'Angreifer' : x.erg === 'V' ? 'Verteidiger' : 'Zeit abgelaufen') + '</b></span><button class="btn small sec" data-dudel="' + esc(x.id) + '">✕</button></div>'; }).join('');
+    var K = Object.keys(B);
+    if (K.length) h += '<h3>Bilanz (Sieg / Zeit / Niederlage)</h3><table class="st"><thead><tr><th>Kind</th><th class="c">Offensiv</th><th class="c">Defensiv</th></tr></thead><tbody>' + K.map(function (pid) { var o = B[pid].off, d = B[pid].def, z = function (x) { return x && x.anzahl ? x.s + '/' + x.u + '/' + x.n + ' · <b>' + x.quote + ' %</b>' : '–'; }; return '<tr><td>' + esc(nm(+pid)) + '</td><td class="c">' + z(o) + '</td><td class="c">' + z(d) + '</td></tr>'; }).join('') + '</tbody></table>';
+    return h + '<button class="btn sec" id="duSumme" style="margin-top:8px">Summen je Kind eintragen (ohne Einzelduelle)</button></div>';
+  }
+  function bindDuell(m) {
+    if (!$('#duKarte')) return;
+    var du = state.duell;
+    function neu() { M.duellAuswerten(m, duellNote); commit(); keepScroll(render); }
+    bindPick($('#duKarte'), 'duA', function (v) { du.a = v; });
+    bindPick($('#duKarte'), 'duV', function (v) { du.v = v; });
+    $$('[data-du]').forEach(function (b) { b.addEventListener('click', function () {
+      if (!du.a || !du.v) { toast('Bitte Angreifer und Verteidiger wählen'); return; } if (du.a === du.v) { toast('Zwei verschiedene Kinder wählen'); return; }
+      M.duellHinzu(m, du.a, du.v, b.getAttribute('data-du')); du.a = null; du.v = null; neu(); toast('Duell gespeichert'); }); });
+    $$('[data-dudel]').forEach(function (b) { b.addEventListener('click', function () { M.duellEntfernen(m, b.getAttribute('data-dudel')); neu(); }); });
+    $('#duGew').addEventListener('change', function (e) { m.duellGewichtet = e.target.checked; neu(); });
+    $('#duSumme').addEventListener('click', function () {
+      var S = m.duellSumme || {}, kinder = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; });
+      var f = function (pid, r, k) { var v = S[pid] && S[pid][r] && S[pid][r][k]; return '<input type="number" min="0" inputmode="numeric" style="width:44px" data-su="' + pid + '|' + r + '|' + k + '" value="' + (v || '') + '">'; };
+      openSheet('<h3>Summen 1-gegen-1</h3><div class="muted">Je Rolle: Siege / Zeit abgelaufen / Niederlagen. Wird zu erfassten Einzelduellen addiert.</div><div class="scroll"><table class="st"><thead><tr><th>Kind</th><th class="c">Offensiv S/Z/N</th><th class="c">Defensiv S/Z/N</th></tr></thead><tbody>' +
+        kinder.map(function (p) { return '<tr><td>' + esc(E.firstName(p.name)) + '</td><td class="c">' + f(p.id, 'off', 's') + f(p.id, 'off', 'u') + f(p.id, 'off', 'n') + '</td><td class="c">' + f(p.id, 'def', 's') + f(p.id, 'def', 'u') + f(p.id, 'def', 'n') + '</td></tr>'; }).join('') +
+        '</tbody></table></div><button class="btn" id="suOk">Übernehmen</button>', function (root) {
+        $('#suOk', root).addEventListener('click', function () {
+          var N = {}; $$('[data-su]', root).forEach(function (el) { var v = parseInt(el.value, 10); if (!(v > 0)) return; var k = el.getAttribute('data-su').split('|'); ((N[k[0]] = N[k[0]] || {})[k[1]] = N[k[0]][k[1]] || { s: 0, u: 0, n: 0 })[k[2]] = v; });
+          m.duellSumme = N; closeSheet(); neu();
+        });
+      });
+    });
   }
   function teamTxt(t, tv) { return tv ? 'Team: ' + tv.anzahl + ' gemessen · Median ' + wertTxt(t, tv.median) + ' · Ø ' + wertTxt(t, tv.mittel) + '. Eingabe mit Komma oder Punkt; „Weiter“ springt zum nächsten Feld.' : 'Noch keine Werte. Eingabe mit Komma oder Punkt; „Weiter“ springt zum nächsten Feld.'; }
   function bindMessTermin() {
@@ -643,6 +683,7 @@
         $$('[data-add]', root).forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-add'); m.tests.push(id); state.messTest = id; commit(); closeSheet(); keepScroll(render); }); });
       });
     });
+    bindDuell(m);
     if (!$('#mtGrid')) { if ($('#mtDel')) bindDel(); return; }
     var t = M.testById(data, state.messTest), inputs = $$('.mv');
     inputs.forEach(function (el, idx) {
@@ -892,7 +933,7 @@
     h += fsKarte(st);
     h += tkKarte(st);
     var dis = closed ? ' disabled' : '';
-    var kapOpts = [['', '– kein Kapitän –']].concat(named().map(function (i) { var n = data.players[i].name; return [E.firstName(n), n]; }));
+    var kapTn = teilnehmerIds(st), kapOpts = [['', '– kein Kapitän –']].concat(named().filter(function (i) { var p = data.players[i]; return kapTn.indexOf(p.id) >= 0 || E.firstName(p.name) === st.settings.kapitaen; }).map(function (i) { var n = data.players[i].name; return [E.firstName(n), n]; }));
     if (S.kapitaen && !kapOpts.some(function (o) { return o[0] === S.kapitaen || o[1] === S.kapitaen; })) kapOpts.push([S.kapitaen, S.kapitaen + ' (nicht im Kader)']);
     h += '<div class="card"><h2>Spieltag-Vorgaben</h2>' + (closed ? '<div class="warnbox">Abgeschlossen – zum Ändern wieder öffnen.</div>' : '') +
       '<label class="f">Zusagen verwenden</label>' + segHtml('sZus', S.zusagenVerwenden ? '1' : '0', [['1', 'Ja'], ['0', 'Nein (alle Fitten)']]) +
@@ -965,6 +1006,11 @@
     M.spielbericht(st).wechsel.forEach(function (w) { if (w.rein && ids.indexOf(w.rein) < 0) ids.push(w.rein); });
     return ids;
   }
+  function teilnehmerIds(st, extra, alle) {   // ab 2.7: nur Kinder dieses Spieltags (zugesagt, Startelf, eingewechselt, bewertet, in Ereignissen) – „alle“ = ganzer Kader
+    var K = kaderIds(st); if (alle) return K;
+    return M.teilnehmer(st, K, extra, function (id) { return !!pById(id); });
+  }
+  function alleKnopf(id, an, n) { return '<button class="btn small sec" id="' + id + '" style="margin:6px 0">' + (an ? 'Nur Kinder dieses Spieltags' : 'Alle Spieler anzeigen' + (n ? ' (' + n + ')' : '')) + '</button>'; }
   function kaderIds(st) {   // Zugesagte zuerst, dann der Rest
     var all = named().map(function (i) { return data.players[i].id; }).concat(ehemaligeIn(st));   // ehemalige nur, wenn sie hier schon vorkommen
     var zu = all.filter(function (id) { return st.zusagen[id] === 'Zugesagt'; });
@@ -1013,7 +1059,7 @@
       else if (typ === 'fehler' || typ === 'notiz') v.p1 = e.pid; else if (typ === 'karte') { v.p1 = e.pid; v.art = e.art; } else if (typ === 'tausch') { v.p1 = e.a; v.p2 = e.b; }
       minute = e.minute; v.elf = !!e.elfmeter;
     }
-    var on = aufPlatzIds(st, E.isNum(minute) ? minute : null), alle = kaderIds(st), bank = alle.filter(function (id) { return on.indexOf(id) < 0; });
+    var on = aufPlatzIds(st, E.isNum(minute) ? minute : null), alle = teilnehmerIds(st, [v.p1, v.p2], state.evAlle), bank = alle.filter(function (id) { return on.indexOf(id) < 0; });
     var feldZuerst = on.concat(bank), titel = { tor: 'Tor für PSV', gegentor: 'Gegentor', wechsel: 'Wechsel', fehler: 'Abwehrfehler', notiz: 'Notiz', karte: 'Karte / Verletzung', tausch: 'Positionstausch' }[typ];
     var h = '<h3>' + (neu ? titel + (st.live && st.live.phase !== 'vor' && neu && E.isNum(jetztMinute(st)) ? '' : ' einfügen') : titel + ' bearbeiten') + '</h3>';
     h += '<div class="bwl">Minute</div>' + stepper('evMin', minute);
@@ -1025,8 +1071,10 @@
     if (typ === 'karte') h += '<div class="bwl">Art</div>' + segHtml('evArt', v.art, [['Gelb', '🟨 Gelb'], ['Rot', '🟥 Rot'], ['Zeitstrafe', '⏱ Zeitstrafe'], ['Verletzung', '🩹 Verletzung']], 'small') + '<div class="bwl">Spieler</div>' + pickGrid('p1', feldZuerst, v.p1);
     if (typ === 'tausch') h += '<div class="bwl">Spieler 1</div>' + pickGrid('p1', on.length ? on : alle, v.p1) + '<div class="bwl">Spieler 2</div>' + pickGrid('p2', on.length ? on : alle, v.p2);
     if (typ === 'tor' || typ === 'gegentor') h += '<label class="ck"><input type="checkbox" id="evElf"' + (v.elf ? ' checked' : '') + '> Elfmeter</label>';
+    h += alleKnopf('evAlle', !!state.evAlle, kaderIds(st).length);
     h += '<button class="btn" id="evOk">Speichern</button>' + (e ? '<button class="btn warn" id="evDel">Ereignis löschen</button>' : '');
     openSheet(h, function (root) {
+      $('#evAlle', root).addEventListener('click', function () { state.evAlle = !state.evAlle; evSheet(st, typ, e, minute); });
       ['p1', 'p2'].forEach(function (k) { if ($('.pick[data-name="' + k + '"]', root)) bindPick(root, k, function (x) { v[k] = x; }); });
       if ($('#evArt')) bindSeg('evArt', function (x) { v.art = x; });
       bindStepper(root, T + 40);
@@ -1300,7 +1348,8 @@
     if ($('#benchAll')) $('#benchAll').addEventListener('click', function () { state.benchAlle = !state.benchAlle; keepScroll(render); });
     function slotSheet(i) {
       var a = fsAnsicht(st), cur = a.st.spiel.startelf.slots[i], pos = M.startelfListe(a.st)[i].pos;
-      openSheet('<h3>' + pos + ' besetzen</h3>' + pickGrid('slot', kaderIds(st), cur, '<button data-v="" class="leer">– frei –</button>'), function (root) {
+      openSheet('<h3>' + pos + ' besetzen</h3>' + pickGrid('slot', teilnehmerIds(st, [cur], state.evAlle), cur, '<button data-v="" class="leer">– frei –</button>') + alleKnopf('slAlle', !!state.evAlle, kaderIds(st).length), function (root) {
+        $('#slAlle', root).addEventListener('click', function () { state.evAlle = !state.evAlle; slotSheet(i); });
         bindPick(root, 'slot', function (pid) {
           closeSheet();
           fsAendern(st, function (x) { var sl = x.spiel.startelf.slots, c = sl[i], j = pid ? sl.indexOf(pid) : -1; if (j >= 0 && j !== i) sl[j] = c; sl[i] = pid; });
@@ -1393,10 +1442,13 @@
     }, function (src) {
       if (src.charAt(0) !== 's') { toast('Auf eine Position ziehen = Wechsel'); return; }
       var auf = M.liveAufstellung(st, null)[+src.slice(2)]; if (!auf || !auf.pid) return;
-      var on = aufPlatzIds(st, null), bank = kaderIds(st).filter(function (id) { return on.indexOf(id) < 0; });
-      openSheet('<h3>Wechsel für ' + esc(vorn(auf.pid)) + ' (' + auf.pos + ')</h3><div class="bwl">Wer kommt rein?</div>' + pickGrid('wr', bank, null), function (root) {
+      (function wechselSheet() {
+      var on = aufPlatzIds(st, null), bank = teilnehmerIds(st, null, state.evAlle).filter(function (id) { return on.indexOf(id) < 0; });
+      openSheet('<h3>Wechsel für ' + esc(vorn(auf.pid)) + ' (' + auf.pos + ')</h3><div class="bwl">Wer kommt rein?</div>' + pickGrid('wr', bank, null) + alleKnopf('wrAlle', !!state.evAlle, kaderIds(st).length), function (root) {
+        $('#wrAlle', root).addEventListener('click', function () { state.evAlle = !state.evAlle; wechselSheet(); });
         bindPick(root, 'wr', function (rein) { var x = M.addWechsel(st, jetztMinute(st), rein, auf.pid); if (M.liveLaeuft(st)) x.zeit = Date.now(); nachEreignis(st); closeSheet(); keepScroll(render); toast(vorn(rein) + ' für ' + vorn(auf.pid)); });
       });
+      })();
     });
   }
   // Uhr: nur Anzeige – die Zeit kommt immer aus den gespeicherten Zeitstempeln
@@ -1483,7 +1535,7 @@
   }
   function bwKinder(st) {
     return named().map(function (i) { return data.players[i]; }).concat(ehemaligeIn(st).map(pById)).filter(function (p) {
-      return state.bwAlle || st.zusagen[p.id] === 'Zugesagt' || st.bewertungen[p.id] || M.hatGespielt(st, p.id) || !st.settings.zusagenVerwenden;
+      return state.bwAlle || teilnehmerIds(st).indexOf(p.id) >= 0;
     });
   }
   function viewBewertung() {
