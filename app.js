@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.6';
+  var APP_VERSION = '2.6.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -87,10 +87,10 @@
   }
   function elternBericht(st) {
     if (!EB) { toast('Elternbericht nicht verfügbar'); return; }
-    var e = st.eltern || {}, m = ebModell(st), notiz = typeof e.notiz === 'string' ? e.notiz : EB.STANDARD_NOTIZ;
+    var e = st.eltern || {}, m = ebModell(st), notiz = typeof e.notiz === 'string' ? e.notiz : EB.standardNotiz(st, data);
     openSheet('<h2>Elternbericht</h2><div class="muted">Für Eltern, die nicht dabei waren: Ergebnis, unsere Tore mit Vorlage, Gegentore ohne Namen, wer gespielt hat, Ort und Wetter. Keine Noten, Minuten oder Abwehrfehler.</div>' +
       '<label class="f">Notiz vom Trainerteam</label><textarea id="ebNotiz" rows="4">' + esc(notiz) + '</textarea>' +
-      (m.verletzt.length ? '<label class="ck" style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="ebBess"' + (e.besserung ? ' checked' : '') + '> „Gute Besserung, ' + esc(m.verletzt.join(' und ')) + '!“ anfügen</label>' : '') +
+      (m.verletzt.length ? '<label class="ck" style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="ebBess"' + (e.besserung === true ? ' checked' : '') + '> „Gute Besserung, ' + esc(m.verletzt.join(' und ')) + '!“ anfügen</label>' : '') +
       '<div class="row" style="gap:6px;margin-top:8px"><button class="btn" id="ebBild">Bild speichern</button><button class="btn sec" id="ebTeilen">Teilen</button><button class="btn sec" id="ebPdf">PDF</button></div>' +
       '<img id="ebVorschau" alt="" style="width:100%;margin-top:8px;border-radius:10px;border:1px solid var(--bd)">', function (sh) {
       var ta = $('#ebNotiz', sh), cb = $('#ebBess', sh), t = null;
@@ -1925,6 +1925,7 @@
       '<button class="btn sec" id="expEnc">Verschlüsselt exportieren (mit Passwort)</button><button class="btn sec" id="imp">Importieren (JSON-Datei öffnen)</button><button class="btn sec" id="paste">Importieren aus eingefügtem Text</button></div>' +
       '<div class="card"><h2>Präsentation</h2><div class="muted">Folien (16:9) für die Besprechung: Mannschaftsfassung ohne Werte oder Trainerfassung mit allen Zahlen – Vollbild, PDF oder HTML-Datei für Beamer/Tablet.</div><button class="btn" id="praesM">📽 Präsentation erstellen</button><button class="btn sec" id="praesEltern">Elternbericht zu einem Spieltag</button></div>' +
       '<div class="card"><h2>Einstellungen</h2><button class="btn sec" id="gew">Gewichtung der Gesamtnote</button><button class="btn sec" id="zon">Positions-Zonen & Bonus Stamm/Alt</button><button class="btn sec" id="inf">So rechnet die App (Aufstellung, Form, Vorschläge)</button><button class="btn sec" id="ehemM">Ehemalige Spieler (' + M.ehemaligeSpieler(data).length + ')</button><button class="btn sec" id="gegM">Gegner-Datei (' + (data.gegner || []).length + ')</button></div>' +
+      '<div class="card"><h2>Trainingstage</h2><div class="row" style="flex-wrap:wrap;gap:8px">' + [1, 2, 3, 4, 5, 6, 0].map(function (t) { var L = data.settings.trainingstage || [1, 5]; return '<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" data-tt="' + t + '"' + (L.indexOf(t) >= 0 ? ' checked' : '') + '>' + ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][t] + '</label>'; }).join('') + '</div><div class="muted" style="margin-top:6px">Für den Elternbericht („Wir sehen uns am … beim Training“).</div></div>' +
       '<div class="card"><h2>Saison</h2><label class="f">Saisonbeginn (für Saison-Statistik, Altersklassen)</label>' + sel('saisonStart', data.settings.saisonStartMonat || 7, [[7, 'Juli'], [8, 'August'], [1, 'Januar']]) + '<div class="muted" style="margin-top:6px">Aktuelle Saison: ' + esc(M.saisonKey(M.today(), data.settings.saisonStartMonat)) + '. Spieltage werden nach Datum zugeordnet.</div></div>' +
       '<div class="card"><h2>Datenstand</h2><div class="kv"><div>Quelle</div><div>' + esc(data.quelle || '') + '</div><div>Zuletzt geändert</div><div>' + (data.geaendert ? new Date(data.geaendert).toLocaleString('de-DE') : 'unverändert') + '</div><div>Kinder</div><div>' + named().length + '</div>' +
       '<div>Spieltage</div><div>' + data.spieltage.length + (nAbg ? ' (' + nAbg + ' abgeschlossen)' : '') + '</div><div>Bewertungen</div><div>' + nBew + '</div></div>' +
@@ -1936,6 +1937,7 @@
   function exportName() { var d = new Date(); return 'PSV_Wesel-Lackhausen_Daten_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.json'; }
   function exportText(pretty) { data.appVersion = APP_VERSION; return JSON.stringify(data, null, pretty ? 1 : 0); }
   function bindMehr() {
+    $$('[data-tt]').forEach(function (c) { c.addEventListener('change', function () { data.settings.trainingstage = $$('[data-tt]').filter(function (x) { return x.checked; }).map(function (x) { return +x.getAttribute('data-tt'); }).sort(); commit(); }); });
     $('#saisonStart').addEventListener('change', function (e) { data.settings.saisonStartMonat = +e.target.value; state.saisonKey = undefined; commit(); keepScroll(render); });
     $('#exp').addEventListener('click', function () {
       var txt = exportText(true), name = exportName();

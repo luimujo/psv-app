@@ -11,6 +11,14 @@
   var FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif';
   var LOGO = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1024 1024\"><rect width=\"1024\" height=\"1024\" fill=\"#1B5E20\"/><rect x=\"275\" y=\"142\" width=\"474\" height=\"740\" rx=\"10\" fill=\"#FFFFFF\"/><rect x=\"301\" y=\"168\" width=\"422\" height=\"688\" fill=\"none\" stroke=\"#1B5E20\" stroke-width=\"18\"/><g fill=\"none\" stroke=\"#1B5E20\" stroke-width=\"18\"><line x1=\"287\" y1=\"512\" x2=\"737\" y2=\"512\"/><rect x=\"420\" y=\"154\" width=\"184\" height=\"62\"/><rect x=\"420\" y=\"808\" width=\"184\" height=\"62\"/></g><g transform=\"rotate(-30 512 512)\"><polygon points=\"512,206 590,512 434,512\" fill=\"#FFD600\" stroke=\"#1B5E20\" stroke-width=\"14\" stroke-linejoin=\"round\"/><polygon points=\"512,818 590,512 434,512\" fill=\"#1B5E20\" stroke=\"#1B5E20\" stroke-width=\"14\" stroke-linejoin=\"round\"/></g></svg>");
   var STANDARD_NOTIZ = 'Danke an alle Kinder für ihren Einsatz und an alle Eltern für die Unterstützung. Wir sehen uns beim nächsten Training!';
+  var TAG_LANG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'], TRAINING_STANDARD = [1, 5];   // Mo + Fr
+  function naechsterTraining(iso, tage) {   // nächster Trainingstag nach dem Spieltag (Wochentag 0 = So)
+    tage = (tage && tage.length ? tage : TRAINING_STANDARD); if (!iso) return null; var p = iso.split('-'); if (p.length !== 3) return null;
+    var w = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay();
+    for (var k = 1; k <= 7; k++) if (tage.indexOf((w + k) % 7) >= 0) return TAG_LANG[(w + k) % 7];
+    return null;
+  }
+  function standardNotiz(st, d) { var t = naechsterTraining(st && st.datum, d && d.settings && d.settings.trainingstage); return 'Danke an alle Kinder für ihren Einsatz und an alle Eltern für die Unterstützung. ' + (t ? 'Wir sehen uns am ' + t + ' beim Training!' : 'Wir sehen uns beim nächsten Training!'); };
   var BED = { dry: 'trocken', fog: 'Nebel', rain: 'Regen', sleet: 'Schneeregen', snow: 'Schnee', hail: 'Hagel', thunderstorm: 'Gewitter' };
   var TAGE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
   function isNum(x) { return typeof x === 'number' && isFinite(x); }
@@ -55,8 +63,8 @@
       halbzeit: isNum(H) ? H : null, tore: tore, gegentore: gegentore, pause: pause, ohneWertung: !!st.ohneWertung,
       verlauf: ev.map(function (x) { delete x.k; return x; }), spieler: spieler,
       wetter: wetterTxt(st.wetter), wetterQuelle: st.wetter ? 'Wetterdaten: Deutscher Wetterdienst (DWD) über Bright Sky' : '',
-      platz: opt.platz || '', notiz: typeof e.notiz === 'string' ? e.notiz : STANDARD_NOTIZ,
-      besserung: e.besserung && verletzt.length ? verletzt : [], verletzt: verletzt
+      platz: opt.platz || '', notiz: typeof e.notiz === 'string' ? e.notiz : standardNotiz(st, d),
+      besserung: e.besserung === true && verletzt.length ? verletzt : [], verletzt: verletzt
     };
   }
   function metaTxt(m) { return [m.datum, m.ort, m.format, m.halbzeit ? '2 × ' + m.halbzeit + ' Min.' : ''].filter(Boolean).join(' · '); }
@@ -173,5 +181,5 @@
     canvas.height = Math.ceil(H * S); ctx = canvas.getContext('2d'); ctx.setTransform(S, 0, 0, S, 0, 0); ctx.textBaseline = 'alphabetic';
     lauf(true); return canvas;
   }
-  return { LOGO: LOGO, daten: daten, html: html, zeichne: zeichne, dateiname: dateiname, STANDARD_NOTIZ: STANDARD_NOTIZ, wetterTxt: wetterTxt };
+  return { TAG_LANG: TAG_LANG, TRAINING_STANDARD: TRAINING_STANDARD, naechsterTraining: naechsterTraining, standardNotiz: standardNotiz, LOGO: LOGO, daten: daten, html: html, zeichne: zeichne, dateiname: dateiname, STANDARD_NOTIZ: STANDARD_NOTIZ, wetterTxt: wetterTxt };
 });

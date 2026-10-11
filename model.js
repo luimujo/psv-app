@@ -90,7 +90,7 @@
     var used = {}, maxId = 0, fix = [];
     d.players.forEach(function (p) { if (isNum(p.id) && !used[p.id]) { used[p.id] = true; maxId = Math.max(maxId, p.id); } else fix.push(p); });
     fix.forEach(function (p) { p.id = ++maxId; });
-    d.settings = d.settings || {};
+    d.settings = d.settings || {}; if (!Array.isArray(d.settings.trainingstage)) d.settings.trainingstage = [1, 5];   // Mo + Fr
     if (!Array.isArray(d.spieltage)) {
       // Version 1.0: ein einziger Spieltag in settings + player.status
       var info = parseSpielName(d.settings.spieltag);
