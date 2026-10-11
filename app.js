@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.7';
+  var APP_VERSION = '2.7.1';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -633,12 +633,62 @@
   }
   // ---------- 1-gegen-1-Erfassung (ab 2.7) ----------
   function duellNote(pid) { var p = pById(pid), i = data.players.indexOf(p); return i >= 0 && R && R.evals[i] ? R.evals[i].gesamt : null; }
+  // ---------- Duell-Timer (ab 2.7.1) ----------
+  var DT = window.PSVDuellTimer, duAudio = null, duWake = null;
+  function duTon(ms, freq) {
+    try {
+      var ctx = duAudio; if (!ctx) return; var o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+      o.type = 'square'; o.frequency.value = freq || 2700; g.gain.setValueAtTime(1, t); g.gain.setValueAtTime(1, t + ms / 1000 - 0.01); g.gain.linearRampToValueAtTime(0, t + ms / 1000);
+      o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + ms / 1000 + 0.02);
+    } catch (e) { }
+    try { if (window.AndroidBridge && window.AndroidBridge.vibrate) window.AndroidBridge.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { }
+  }
+  function duAudioFreischalten() {   // muss im Tipp auf „Start“ laufen (iOS)
+    try { var AC = window.AudioContext || window.webkitAudioContext; if (!duAudio && AC) duAudio = new AC(); if (duAudio && duAudio.state === 'suspended') duAudio.resume();
+      if (duAudio) { var b = duAudio.createBuffer(1, 1, 22050), s = duAudio.createBufferSource(); s.buffer = b; s.connect(duAudio.destination); s.start(0); } } catch (e) { }
+  }
+  function duWach(an) {
+    try { if (window.AndroidBridge && window.AndroidBridge.keepAwake) window.AndroidBridge.keepAwake(an); } catch (e) { }
+    if (an && navigator.wakeLock && navigator.wakeLock.request) navigator.wakeLock.request('screen').then(function (w) { duWake = w; }).catch(function () { });
+    if (!an && duWake) { try { duWake.release(); } catch (e) { } duWake = null; }
+  }
+  function duellTimer(m, a, v) {
+    var nm = function (pid) { var p = pById(pid); return p ? E.firstName(p.name) : '?'; };
+    duAudioFreischalten(); duWach(true);
+    var ov = document.createElement('div'); ov.id = 'duTimer';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:50;background:var(--g);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;text-align:center';
+    ov.innerHTML = '<div style="font-size:20px;font-weight:700">' + esc(nm(a)) + ' <span style="opacity:.75;font-weight:400">greift an gegen</span> ' + esc(nm(v)) + '</div><div id="duZahl" style="font-size:42vmin;font-weight:800;line-height:1">' + DT.sekunden(data.settings.duellSek) + '</div>' +
+      '<button class="btn" id="duStopp" style="background:#fff;color:var(--g);font-size:24px;padding:18px;max-width:420px">■ Stopp</button>';
+    document.body.appendChild(ov);
+    var T = DT.starte({ sek: data.settings.duellSek, jetzt: function () { return Date.now(); }, planen: function (f, ms) { return setTimeout(f, ms); }, abbrechen: clearTimeout,
+      tick: function (rest, ende) { var z = $('#duZahl'); if (z) z.textContent = rest; if (ende) duTon(1000, 2400); else if (rest < DT.sekunden(data.settings.duellSek)) duTon(120, 2900); },
+      ende: function (grund) { duWach(false); setTimeout(function () { ov.remove(); duellErgebnis(m, a, v, grund === 'zeit'); }, grund === 'zeit' ? 1000 : 0); } });
+    $('#duStopp', ov).addEventListener('click', function () { T.stopp(); });
+  }
+  function duellErgebnis(m, a, v, zeitAus) {
+    var nm = function (pid) { var p = pById(pid); return p ? E.firstName(p.name) : '?'; };
+    var hi = function (k) { return zeitAus && k === 'Z' ? ' style="outline:4px solid #FFB300;font-size:18px"' : ''; };
+    openSheet('<h3>Ergebnis: ' + esc(nm(a)) + ' gegen ' + esc(nm(v)) + '</h3>' + (zeitAus ? '<div class="muted">Zeit abgelaufen</div>' : '') +
+      '<button class="btn" data-er="A">Angreifer gewinnt (' + esc(nm(a)) + ')</button><button class="btn sec" data-er="Z"' + hi('Z') + '>Zeit abgelaufen</button><button class="btn" data-er="V">Verteidiger gewinnt (' + esc(nm(v)) + ')</button>', function (root) {
+      $$('[data-er]', root).forEach(function (b) { b.addEventListener('click', function () {
+        M.duellHinzu(m, a, v, b.getAttribute('data-er')); M.duellAuswerten(m, duellNote); commit();
+        var ids = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; }), n = DT.naechstesPaar(m.duelle, ids, a, v);
+        state.duell = { a: n ? n.a : null, v: n ? n.v : null }; keepScroll(render);
+        openSheet('<h3>Gespeichert</h3>' + (n ? '<div class="muted">Vorschlag (' + esc(n.grund) + '):</div><button class="btn" id="duNext" style="font-size:20px;padding:14px">▶ Nächstes Duell: ' + esc(nm(n.a)) + ' gegen ' + esc(nm(n.v)) + '</button>' : '') + '<button class="btn sec" id="duFertig">Fertig</button>', function (r2) {
+          if ($('#duNext', r2)) $('#duNext', r2).addEventListener('click', function () { closeSheet(); duellTimer(m, n.a, n.v); });
+          $('#duFertig', r2).addEventListener('click', function () { closeSheet(); });
+        });
+      }); });
+    });
+  }
   function duellKarte(m) {
     var du = state.duell || (state.duell = { a: null, v: null }), ids = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; });
     var B = M.duellBilanz(m, duellNote), L = (m.duelle || []).slice(-8).reverse();
     var nm = function (pid) { var p = pById(pid); return p ? E.firstName(p.name) : '?'; };
     var h = '<div class="card" id="duKarte"><h2>1-gegen-1 erfassen</h2><div class="muted">Duell für Duell: Angreifer und Verteidiger antippen, dann das Ergebnis. Die Erfolgsquote wird automatisch in beide Tests eingetragen.</div>' +
       '<label class="f">Angreifer (mit Ball)</label>' + pickGrid('duA', ids, du.a) + '<label class="f">Verteidiger</label>' + pickGrid('duV', ids, du.v) +
+      '<div class="row" style="gap:6px;margin-top:10px;align-items:center"><button class="btn" id="duStart" style="font-size:22px;padding:16px 4px;flex:2">▶ Start</button><div style="flex:1"><label class="f">Zeit</label>' + sel('duSek', DT.sekunden(data.settings.duellSek), [6, 7, 8, 9, 10, 11, 12].map(function (x) { return [x, x + ' s']; })) + '</div></div>' +
+      '<div class="muted" style="margin-top:4px">Start: Countdown mit Piepton je Sekunde, langer Ton am Ende. „Stopp“ beendet früher (z. B. bei Tor). Ergebnis auch ohne Timer direkt eintragbar:</div>' +
       '<div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-du="A">Angreifer gewinnt</button><button class="btn sec" data-du="Z">Zeit abgelaufen</button><button class="btn" data-du="V">Verteidiger gewinnt</button></div>' +
       '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="duGew"' + (m.duellGewichtet ? ' checked' : '') + '> nach Stärke des Gegners gewichten (Gesamtnote)</label>';
     if (L.length) h += '<h3>Letzte Duelle (' + (m.duelle || []).length + ')</h3>' + L.map(function (x) { return '<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--bd);padding:4px 0"><span>' + esc(nm(x.a)) + ' gegen ' + esc(nm(x.v)) + ' · <b>' + (x.erg === 'A' ? 'Angreifer' : x.erg === 'V' ? 'Verteidiger' : 'Zeit abgelaufen') + '</b></span><button class="btn small sec" data-dudel="' + esc(x.id) + '">✕</button></div>'; }).join('');
@@ -656,6 +706,11 @@
       if (!du.a || !du.v) { toast('Bitte Angreifer und Verteidiger wählen'); return; } if (du.a === du.v) { toast('Zwei verschiedene Kinder wählen'); return; }
       M.duellHinzu(m, du.a, du.v, b.getAttribute('data-du')); du.a = null; du.v = null; neu(); toast('Duell gespeichert'); }); });
     $$('[data-dudel]').forEach(function (b) { b.addEventListener('click', function () { M.duellEntfernen(m, b.getAttribute('data-dudel')); neu(); }); });
+    $('#duSek').addEventListener('change', function (e) { data.settings.duellSek = DT.sekunden(e.target.value); commit(); });
+    $('#duStart').addEventListener('click', function () {
+      if (!du.a || !du.v) { toast('Bitte Angreifer und Verteidiger wählen'); return; } if (du.a === du.v) { toast('Zwei verschiedene Kinder wählen'); return; }
+      duellTimer(m, du.a, du.v);
+    });
     $('#duGew').addEventListener('change', function (e) { m.duellGewichtet = e.target.checked; neu(); });
     $('#duSumme').addEventListener('click', function () {
       var S = m.duellSumme || {}, kinder = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; });

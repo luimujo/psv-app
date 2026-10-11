@@ -1,6 +1,6 @@
-/* PSV Wesel-Lackhausen – Service Worker (App-Hülle offline). Version 2.7 · 848bc6c5af */
-const CACHE = 'psv-app-2.7-848bc6c5af';
-const SHELL = ['./', './index.html','./style.css','./app.js','./engine.js','./model.js','./data.js','./praes.js','./firebase.js','./cloud-core.js','./sync.js','./xlsx.js','./import.js','./taktik.js','./wetter.js','./eltern.js','./pwa.js','./logo.svg', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
+/* PSV Wesel-Lackhausen – Service Worker (App-Hülle offline). Version 2.7.1 · 21a42e9307 */
+const CACHE = 'psv-app-2.7.1-21a42e9307';
+const SHELL = ['./', './index.html','./style.css','./app.js','./engine.js','./model.js','./data.js','./praes.js','./firebase.js','./cloud-core.js','./sync.js','./xlsx.js','./import.js','./taktik.js','./wetter.js','./eltern.js','./duelltimer.js','./pwa.js','./logo.svg', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); });
 self.addEventListener('message', e => { if (e.data === 'skipWaiting') self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('psv-app-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
