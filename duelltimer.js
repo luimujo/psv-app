@@ -20,17 +20,26 @@
     o.tick(sek, false); id = o.planen(schritt, 100);
     return { stopp: function () { if (fertig) return; fertig = true; if (id !== null && o.abbrechen) o.abbrechen(id); o.ende('stopp'); }, laeuft: function () { return !fertig; } };
   }
-  // nächstes Duell: zuerst Rollen tauschen (wenn dieses Paar andersherum noch nicht gespielt hat), sonst Kinder mit den wenigsten Duellen der jeweiligen Rolle
-  function naechstesPaar(duelle, ids, a, v) {
-    duelle = duelle || [];
-    var gespielt = function (x, y) { return duelle.filter(function (d) { return d.a === x && d.v === y; }).length; };
-    if (a && v && ids.indexOf(a) >= 0 && ids.indexOf(v) >= 0 && gespielt(v, a) < gespielt(a, v)) return { a: v, v: a, grund: 'Rollen getauscht' };
-    if (ids.length < 2) return null;
+  // nächstes Duell (ab 2.7.2: ausgewogene Rotation bis jedes Kind „ziel“ Duelle je Rolle hat, wechselnde Gegner; ungerade Anzahl ok)
+  function stand(duelle, ids) {
     var off = {}, def = {}; ids.forEach(function (id) { off[id] = 0; def[id] = 0; });
-    duelle.forEach(function (d) { if (d.a in off) off[d.a]++; if (d.v in def) def[d.v]++; });
-    var ang = ids.slice().sort(function (x, y) { return off[x] - off[y] || (def[x] + off[x]) - (def[y] + off[y]) || ids.indexOf(x) - ids.indexOf(y); })[0];
-    var ver = ids.filter(function (id) { return id !== ang; }).sort(function (x, y) { return gespielt(ang, x) - gespielt(ang, y) || def[x] - def[y] || ids.indexOf(x) - ids.indexOf(y); })[0];
+    (duelle || []).forEach(function (d) { if (d.a in off) off[d.a]++; if (d.v in def) def[d.v]++; });
+    return { off: off, def: def };
+  }
+  function naechstesPaar(duelle, ids, a, v, ziel) {
+    duelle = duelle || []; ziel = ziel || 6; if (ids.length < 2) return null;
+    var S = stand(duelle, ids), off = S.off, def = S.def;
+    var begegnung = function (x, y) { return duelle.filter(function (d) { return (d.a === x && d.v === y) || (d.a === y && d.v === x); }).length; };
+    var richtung = function (x, y) { return duelle.filter(function (d) { return d.a === x && d.v === y; }).length; };
+    var offen = function (id) { return Math.max(0, ziel - off[id]) + Math.max(0, ziel - def[id]); };
+    if (ids.every(function (id) { return off[id] >= ziel && def[id] >= ziel; })) return null;
+    // Rollentausch, wenn beide in der getauschten Rolle noch Duelle brauchen und das Paar andersherum seltener gespielt hat
+    if (a && v && ids.indexOf(a) >= 0 && ids.indexOf(v) >= 0 && off[v] < ziel && def[a] < ziel && richtung(v, a) < richtung(a, v)) return { a: v, v: a, grund: 'Rollen getauscht' };
+    var pos = function (id) { return ids.indexOf(id); };
+    var letzte = duelle.length ? duelle[duelle.length - 1] : null, pause = function (id) { return letzte && (letzte.a === id || letzte.v === id) ? 1 : 0; };
+    var ang = ids.slice().sort(function (x, y) { return (off[x] >= ziel) - (off[y] >= ziel) || off[x] - off[y] || pause(x) - pause(y) || offen(y) - offen(x) || pos(x) - pos(y); })[0];
+    var ver = ids.filter(function (id) { return id !== ang; }).sort(function (x, y) { return (def[x] >= ziel) - (def[y] >= ziel) || begegnung(ang, x) - begegnung(ang, y) || def[x] - def[y] || pause(x) - pause(y) || pos(x) - pos(y); })[0];
     return { a: ang, v: ver, grund: 'nächstes Paar' };
   }
-  return { MIN: MIN, MAX: MAX, STANDARD: STANDARD, sekunden: sekunden, starte: starte, naechstesPaar: naechstesPaar };
+  return { MIN: MIN, MAX: MAX, STANDARD: STANDARD, sekunden: sekunden, starte: starte, stand: stand, naechstesPaar: naechstesPaar, ZIEL: 6 };
 });

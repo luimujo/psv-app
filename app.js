@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.7.1';
+  var APP_VERSION = '2.7.2';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -660,7 +660,7 @@
     ov.innerHTML = '<div style="font-size:20px;font-weight:700">' + esc(nm(a)) + ' <span style="opacity:.75;font-weight:400">greift an gegen</span> ' + esc(nm(v)) + '</div><div id="duZahl" style="font-size:42vmin;font-weight:800;line-height:1">' + DT.sekunden(data.settings.duellSek) + '</div>' +
       '<button class="btn" id="duStopp" style="background:#fff;color:var(--g);font-size:24px;padding:18px;max-width:420px">■ Stopp</button>';
     document.body.appendChild(ov);
-    var T = DT.starte({ sek: data.settings.duellSek, jetzt: function () { return Date.now(); }, planen: function (f, ms) { return setTimeout(f, ms); }, abbrechen: clearTimeout,
+    var T = DT.starte({ sek: data.settings.duellSek, jetzt: function () { return Date.now(); }, planen: function (f, ms) { return setTimeout(f, ms); }, abbrechen: function (id) { clearTimeout(id); },
       tick: function (rest, ende) { var z = $('#duZahl'); if (z) z.textContent = rest; if (ende) duTon(1000, 2400); else if (rest < DT.sekunden(data.settings.duellSek)) duTon(120, 2900); },
       ende: function (grund) { duWach(false); setTimeout(function () { ov.remove(); duellErgebnis(m, a, v, grund === 'zeit'); }, grund === 'zeit' ? 1000 : 0); } });
     $('#duStopp', ov).addEventListener('click', function () { T.stopp(); });
@@ -672,17 +672,46 @@
       '<button class="btn" data-er="A">Angreifer gewinnt (' + esc(nm(a)) + ')</button><button class="btn sec" data-er="Z"' + hi('Z') + '>Zeit abgelaufen</button><button class="btn" data-er="V">Verteidiger gewinnt (' + esc(nm(v)) + ')</button>', function (root) {
       $$('[data-er]', root).forEach(function (b) { b.addEventListener('click', function () {
         M.duellHinzu(m, a, v, b.getAttribute('data-er')); M.duellAuswerten(m, duellNote); commit();
-        var ids = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; }), n = DT.naechstesPaar(m.duelle, ids, a, v);
+        var ids = duellIds(m), n = DT.naechstesPaar(m.duelle, ids, a, v, DT.ZIEL);
         state.duell = { a: n ? n.a : null, v: n ? n.v : null }; keepScroll(render);
-        openSheet('<h3>Gespeichert</h3>' + (n ? '<div class="muted">Vorschlag (' + esc(n.grund) + '):</div><button class="btn" id="duNext" style="font-size:20px;padding:14px">▶ Nächstes Duell: ' + esc(nm(n.a)) + ' gegen ' + esc(nm(n.v)) + '</button>' : '') + '<button class="btn sec" id="duFertig">Fertig</button>', function (r2) {
+        openSheet('<h3>Gespeichert</h3>' + (!n ? '<div class="muted">Alle Kinder haben ' + DT.ZIEL + ' Duelle je Rolle – Test vollständig.</div>' : '') + (n ? '<div class="muted">Vorschlag (' + esc(n.grund) + '):</div><button class="btn" id="duNext" style="font-size:20px;padding:14px">▶ Nächstes Duell: ' + esc(nm(n.a)) + ' gegen ' + esc(nm(n.v)) + '</button>' : '') + '<button class="btn sec" id="duFertig">Fertig</button>', function (r2) {
           if ($('#duNext', r2)) $('#duNext', r2).addEventListener('click', function () { closeSheet(); duellTimer(m, n.a, n.v); });
           $('#duFertig', r2).addEventListener('click', function () { closeSheet(); });
         });
       }); });
     });
   }
+  function duellIds(m) { var ok = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; }); return (m.duellTeilnehmer || ok).filter(function (id) { return ok.indexOf(id) >= 0 || pById(id); }); }
+  function duellVorauswahl(m) {   // Anwesenheit eines Spieltags am Messdatum, sonst alle aktiven Feldspieler
+    var alle = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; });
+    var st = data.spieltage.filter(function (s) { return s.datum === m.datum && Object.keys(s.zusagen || {}).some(function (k) { return s.zusagen[k] === 'Zugesagt'; }); })[0];
+    return st ? alle.filter(function (id) { return st.zusagen[id] === 'Zugesagt'; }) : alle;
+  }
+  function duellTeilnehmerKarte(m, neu) {
+    var alle = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }), sel = m.duellTeilnehmer || duellVorauswahl(m);
+    return '<div class="card" id="duTn"><h2>1-gegen-1: Wer macht mit?</h2><div class="muted">' + (m.duellTeilnehmer ? 'Teilnehmer ändern (z. B. Nachzügler).' : 'Anwesende Kinder auswählen – nur sie werden für die Duelle eingeteilt.') + '</div>' +
+      '<div class="row" style="gap:6px;margin:8px 0"><button class="btn small sec" id="tnAlle">Alle</button><button class="btn small sec" id="tnKeine">Keine</button></div><div class="kidgrid">' +
+      alle.map(function (p) { var on = sel.indexOf(p.id) >= 0; return '<label class="kid" style="display:flex;flex-direction:column;align-items:center;gap:2px;opacity:' + (on ? 1 : 0.45) + '"><input type="checkbox" data-tn="' + p.id + '"' + (on ? ' checked' : '') + ' style="position:absolute;opacity:0">' + avatar(p, 'm') + '<span>' + (on ? '✓ ' : '') + esc(E.firstName(p.name)) + '</span></label>'; }).join('') +
+      '</div><button class="btn" id="tnOk" style="margin-top:8px">' + (m.duellTeilnehmer ? 'Übernehmen' : 'Test starten') + '</button>' + (m.duellTeilnehmer ? '<button class="btn sec" id="tnAbbr">Abbrechen</button>' : '') + '</div>';
+  }
+  function bindDuellTeilnehmer(m) {
+    if (!$('#duTn')) return;
+    var box = $$('[data-tn]'), mal = function () { box.forEach(function (c) { var l = c.closest('label'); l.style.opacity = c.checked ? 1 : 0.45; l.querySelector('span').textContent = (c.checked ? '✓ ' : '') + l.querySelector('span').textContent.replace(/^✓ /, ''); }); };
+    box.forEach(function (c) { c.addEventListener('change', mal); });
+    $('#tnAlle').addEventListener('click', function () { box.forEach(function (c) { c.checked = true; }); mal(); });
+    $('#tnKeine').addEventListener('click', function () { box.forEach(function (c) { c.checked = false; }); mal(); });
+    $('#tnOk').addEventListener('click', function () {
+      var L = box.filter(function (c) { return c.checked; }).map(function (c) { return +c.getAttribute('data-tn'); });
+      if (L.length < 2) { toast('Mindestens zwei Kinder auswählen'); return; }
+      m.duellTeilnehmer = L; state.duellTnEdit = false; state.duell = { a: null, v: null };
+      var n = DT.naechstesPaar(m.duelle, L, null, null, DT.ZIEL); if (n) state.duell = { a: n.a, v: n.v };
+      commit(); keepScroll(render);
+    });
+    if ($('#tnAbbr')) $('#tnAbbr').addEventListener('click', function () { state.duellTnEdit = false; keepScroll(render); });
+  }
   function duellKarte(m) {
-    var du = state.duell || (state.duell = { a: null, v: null }), ids = messKinder(m).filter(function (p) { return !p.archiviert && p.typ !== 'TW'; }).map(function (p) { return p.id; });
+    if (!m.duellTeilnehmer || state.duellTnEdit) return duellTeilnehmerKarte(m);
+    var du = state.duell || (state.duell = { a: null, v: null }), ids = duellIds(m), SD = DT.stand(m.duelle, ids), Z = DT.ZIEL;
     var B = M.duellBilanz(m, duellNote), L = (m.duelle || []).slice(-8).reverse();
     var nm = function (pid) { var p = pById(pid); return p ? E.firstName(p.name) : '?'; };
     var h = '<div class="card" id="duKarte"><h2>1-gegen-1 erfassen</h2><div class="muted">Duell für Duell: Angreifer und Verteidiger antippen, dann das Ergebnis. Die Erfolgsquote wird automatisch in beide Tests eingetragen.</div>' +
@@ -692,19 +721,22 @@
       '<div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-du="A">Angreifer gewinnt</button><button class="btn sec" data-du="Z">Zeit abgelaufen</button><button class="btn" data-du="V">Verteidiger gewinnt</button></div>' +
       '<label class="ck" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="duGew"' + (m.duellGewichtet ? ' checked' : '') + '> nach Stärke des Gegners gewichten (Gesamtnote)</label>';
     if (L.length) h += '<h3>Letzte Duelle (' + (m.duelle || []).length + ')</h3>' + L.map(function (x) { return '<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--bd);padding:4px 0"><span>' + esc(nm(x.a)) + ' gegen ' + esc(nm(x.v)) + ' · <b>' + (x.erg === 'A' ? 'Angreifer' : x.erg === 'V' ? 'Verteidiger' : 'Zeit abgelaufen') + '</b></span><button class="btn small sec" data-dudel="' + esc(x.id) + '">✕</button></div>'; }).join('');
+    h += '<h3>Fortschritt (' + ids.length + ' Kinder, Ziel je ' + Z + ' Duelle pro Rolle)</h3><div class="chips">' + ids.map(function (id) { var fertig = SD.off[id] >= Z && SD.def[id] >= Z; return '<span class="chip"' + (fertig ? ' style="background:#E8F5E9;color:#1B5E20"' : '') + '>' + esc(nm(id)) + ' · A ' + SD.off[id] + '/' + Z + ' · V ' + SD.def[id] + '/' + Z + '</span>'; }).join('') + '</div><button class="btn small sec" id="duTnAendern" style="margin-top:6px">Teilnehmer ändern</button>';
     var K = Object.keys(B);
     if (K.length) h += '<h3>Bilanz (Sieg / Zeit / Niederlage)</h3><table class="st"><thead><tr><th>Kind</th><th class="c">Offensiv</th><th class="c">Defensiv</th></tr></thead><tbody>' + K.map(function (pid) { var o = B[pid].off, d = B[pid].def, z = function (x) { return x && x.anzahl ? x.s + '/' + x.u + '/' + x.n + ' · <b>' + x.quote + ' %</b>' : '–'; }; return '<tr><td>' + esc(nm(+pid)) + '</td><td class="c">' + z(o) + '</td><td class="c">' + z(d) + '</td></tr>'; }).join('') + '</tbody></table>';
     return h + '<button class="btn sec" id="duSumme" style="margin-top:8px">Summen je Kind eintragen (ohne Einzelduelle)</button></div>';
   }
   function bindDuell(m) {
+    bindDuellTeilnehmer(m);
     if (!$('#duKarte')) return;
+    $('#duTnAendern').addEventListener('click', function () { state.duellTnEdit = true; keepScroll(render); });
     var du = state.duell;
     function neu() { M.duellAuswerten(m, duellNote); commit(); keepScroll(render); }
     bindPick($('#duKarte'), 'duA', function (v) { du.a = v; });
     bindPick($('#duKarte'), 'duV', function (v) { du.v = v; });
     $$('[data-du]').forEach(function (b) { b.addEventListener('click', function () {
       if (!du.a || !du.v) { toast('Bitte Angreifer und Verteidiger wählen'); return; } if (du.a === du.v) { toast('Zwei verschiedene Kinder wählen'); return; }
-      M.duellHinzu(m, du.a, du.v, b.getAttribute('data-du')); du.a = null; du.v = null; neu(); toast('Duell gespeichert'); }); });
+      var a0 = du.a, v0 = du.v; M.duellHinzu(m, a0, v0, b.getAttribute('data-du')); var nx = DT.naechstesPaar(m.duelle, duellIds(m), a0, v0, DT.ZIEL); du.a = nx ? nx.a : null; du.v = nx ? nx.v : null; neu(); toast('Duell gespeichert' + (nx ? ' – nächstes Paar vorgewählt' : '')); }); });
     $$('[data-dudel]').forEach(function (b) { b.addEventListener('click', function () { M.duellEntfernen(m, b.getAttribute('data-dudel')); neu(); }); });
     $('#duSek').addEventListener('change', function (e) { data.settings.duellSek = DT.sekunden(e.target.value); commit(); });
     $('#duStart').addEventListener('click', function () {
