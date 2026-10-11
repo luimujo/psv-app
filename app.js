@@ -3,7 +3,7 @@
   'use strict';
   var E = window.PSVEngine, M = window.PSVModel, P = window.PSVPraes;
   var KEY = 'psv_kaas_daten_v1';
-  var APP_VERSION = '2.5.2';
+  var APP_VERSION = '2.6';
   var CLOUD = window.PSVCloud && window.PSVCloud.aktiv() ? window.PSVCloud : null;   // ab 2.0: verschlüsselte Cloud-Synchronisation
   var state = { tab: 'kader', detail: null, sub: null, stId: null, size: '9', form: { '7': '7A', '9': '9A' }, kaderSort: 'nr', bwAlle: false, benchAlle: false, rkMode: 'note', sheet: null };
   var data, R;
@@ -65,6 +65,48 @@
     var bilder = [].slice.call(root.querySelectorAll('img')).map(function (im) { return im.decode ? im.decode().catch(function () { }) : null; });
     Promise.all(bilder).then(function () {
       setTimeout(function () { try { window.print(); } catch (e) { toast('Drucken nicht möglich'); } setTimeout(aufraeumen, 60000); }, 150);
+    });
+  }
+
+  // ---------- Elternbericht (ab 2.6) ----------
+  var EB = window.PSVEltern, ebLogo = null;
+  function ebLogoLaden() {   // Vereinslogo als Bild (Canvas) und als PNG-Daten-URL (PDF/Android-Druck ohne Basis-URL)
+    if (ebLogo) return Promise.resolve(ebLogo);
+    return new Promise(function (ok) {
+      var im = new Image(); im.onload = function () { var c = document.createElement('canvas'); c.width = c.height = 128; c.getContext('2d').drawImage(im, 0, 0, 128, 128); var u = ''; try { u = c.toDataURL('image/png'); } catch (e) { } ebLogo = { img: im, url: u }; ok(ebLogo); };
+      im.onerror = function () { ok({ img: null, url: '' }); }; im.src = EB.LOGO;
+    });
+  }
+  function ebModell(st) { var o = wtOrt(st); return EB.daten(M, data, st, { platz: o && o.name ? o.name : '' }); }
+  function elternAuswahl() {
+    var L = data.spieltage.filter(function (s) { var b = s.spiel; return b && ((b.tore || []).length || b.gegentore || (b.startelf && b.startelf.slots)); }).sort(function (a, b) { return (b.datum || '').localeCompare(a.datum || ''); });
+    if (!L.length) { toast('Noch kein Spieltag mit Spielbericht'); return; }
+    openSheet('<h2>Elternbericht – Spieltag wählen</h2>' + L.map(function (s) { return '<button class="btn sec" data-eb="' + esc(s.id) + '">' + esc(M.titel(s)) + ' · ' + s.spiel.tore.length + ':' + s.spiel.gegentore + '</button>'; }).join(''), function (sh) {
+      $$('[data-eb]', sh).forEach(function (b) { b.addEventListener('click', function () { var st = M.getSpieltag(data, b.getAttribute('data-eb')); closeSheet(); if (st) elternBericht(st); }); });
+    });
+  }
+  function elternBericht(st) {
+    if (!EB) { toast('Elternbericht nicht verfügbar'); return; }
+    var e = st.eltern || {}, m = ebModell(st), notiz = typeof e.notiz === 'string' ? e.notiz : EB.STANDARD_NOTIZ;
+    openSheet('<h2>Elternbericht</h2><div class="muted">Für Eltern, die nicht dabei waren: Ergebnis, unsere Tore mit Vorlage, Gegentore ohne Namen, wer gespielt hat, Ort und Wetter. Keine Noten, Minuten oder Abwehrfehler.</div>' +
+      '<label class="f">Notiz vom Trainerteam</label><textarea id="ebNotiz" rows="4">' + esc(notiz) + '</textarea>' +
+      (m.verletzt.length ? '<label class="ck" style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="ebBess"' + (e.besserung ? ' checked' : '') + '> „Gute Besserung, ' + esc(m.verletzt.join(' und ')) + '!“ anfügen</label>' : '') +
+      '<div class="row" style="gap:6px;margin-top:8px"><button class="btn" id="ebBild">Bild speichern</button><button class="btn sec" id="ebTeilen">Teilen</button><button class="btn sec" id="ebPdf">PDF</button></div>' +
+      '<img id="ebVorschau" alt="" style="width:100%;margin-top:8px;border-radius:10px;border:1px solid var(--bd)">', function (sh) {
+      var ta = $('#ebNotiz', sh), cb = $('#ebBess', sh), t = null;
+      function merken() { var x = st.eltern || (st.eltern = {}); x.notiz = ta.value; if (cb) x.besserung = cb.checked; commit(); }
+      function vorschau() { ebLogoLaden().then(function (lg) { var c = EB.zeichne(document.createElement('canvas'), ebModell(st), lg.img); var v = $('#ebVorschau', sh); if (v) v.src = c.toDataURL('image/png'); }); }
+      ta.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { merken(); vorschau(); }, 500); });
+      if (cb) cb.addEventListener('change', function () { merken(); vorschau(); });
+      function bild(teilen) { merken(); ebLogoLaden().then(function (lg) { var mm = ebModell(st), c = EB.zeichne(document.createElement('canvas'), mm, lg.img); tkAusgeben(EB.dateiname(mm, 'png'), c.toDataURL('image/png').split(',')[1], 'image/png', teilen, 'Elternbericht ' + mm.datum); }); }
+      $('#ebBild', sh).addEventListener('click', function () { bild(false); });
+      $('#ebTeilen', sh).addEventListener('click', function () { bild(true); });
+      $('#ebPdf', sh).addEventListener('click', function () {
+        merken(); ebLogoLaden().then(function (lg) { var mm = ebModell(st), html = EB.html(mm, lg.url), br = window.AndroidBridge;
+          if (br && br.printHtml) { br.printHtml(EB.dateiname(mm, 'pdf').replace(/\.pdf$/, ''), html); return; }
+          webDrucken(html); });
+      });
+      vorschau();
     });
   }
   function webTeilenText(titel, txt) {
@@ -1378,7 +1420,7 @@
     var h = '<div class="card score"><div class="sc"><div class="team">PSV Wesel-Lackhausen</div><div class="res"><b id="erg">' + z.tore + ' : ' + z.gegentore + '</b></div><div class="team">' + esc(z.gegner) + '</div></div><div class="muted" style="text-align:center">' + esc(z.titel) + (z.halbzeit ? ' · 2 × ' + z.halbzeit + ' Min.' : '') + ' · Spielzeit ' + z.spielzeit + ' Min.</div></div>';
     var kr = korrekturVon(st);
     if (st.ohneWertung || kr) h += '<div class="card owcard">' + (st.ohneWertung ? owChip(st) + ' <span class="muted">zählt nicht für Bilanz, Form und Vorschläge</span>' : '') + (kr ? '<div class="muted" style="margin-top:4px">Nach offiziellem Spielbericht korrigiert (' + esc(M.fmtDatum(kr.angewandt.slice(0, 10))) + ')</div>' : '') + '</div>';
-    h += '<div class="card"><h2>Exportieren</h2><button class="btn" id="zsShare">Als Text teilen (WhatsApp, Mail …)</button><button class="btn sec" id="zsPdf">Als PDF speichern / drucken</button><button class="btn sec" id="zsHtml">Als HTML-Datei speichern</button><button class="btn sec" id="zsGeg">🔎 Gegner-Notiz hinzufügen</button><div class="muted">Die Zusammenfassung ist außerdem im JSON-Export enthalten.</div></div>';
+    h += '<div class="card"><h2>Exportieren</h2><button class="btn" id="zsEltern">Elternbericht (Bild / PDF)</button><button class="btn sec" id="zsShare">Als Text teilen (WhatsApp, Mail …)</button><button class="btn sec" id="zsPdf">Als PDF speichern / drucken</button><button class="btn sec" id="zsHtml">Als HTML-Datei speichern</button><button class="btn sec" id="zsGeg">🔎 Gegner-Notiz hinzufügen</button><div class="muted">Die Zusammenfassung ist außerdem im JSON-Export enthalten.</div></div>';
     h += timelineHtml(st, b);
     h += '<div class="card"><h2>Aufstellung Anpfiff → Abpfiff</h2><table><thead><tr><th>Pos.</th><th>Anpfiff</th><th>Abpfiff</th></tr></thead><tbody>' + z.startelf.map(function (x, i) { var e = z.endelf[i] || {}; return '<tr><td><b>' + esc(x.pos) + '</b></td><td>' + esc(x.name) + '</td><td>' + (e.name !== x.name ? '<b>' + esc(e.name) + '</b>' : esc(e.name)) + '</td></tr>'; }).join('') + '</tbody></table></div>';
     if (z.wechsel.length) h += '<div class="card"><h2>Wechsel</h2><table><tbody>' + z.wechsel.map(function (w) { return '<tr><td class="c">' + (E.isNum(w.minute) ? w.minute + '′' : '–') + '</td><td>' + esc(w.rein) + ' für ' + esc(w.raus) + '</td></tr>'; }).join('') + '</tbody></table></div>';
@@ -1405,6 +1447,7 @@
       if (br && br.saveFileAs) { br.saveFileAs(name, html, 'text/html'); return; }
       webDownload(name, new Blob([html], { type: 'text/html' })); toast('„' + name + '“ gespeichert');
     });
+    $('#zsEltern').addEventListener('click', function () { elternBericht(st); });
     $('#zsPdf').addEventListener('click', function () {
       var html = M.zusammenfassungHtml(data, st);
       if (br && br.printHtml) { br.printHtml(dateiName(st, 'pdf').replace(/\.pdf$/, ''), html); return; }
@@ -1880,7 +1923,7 @@
       '<div class="card"><h2>Daten sichern & teilen</h2><div class="muted">' + (CLOUD ? 'Zusätzlich zur Cloud regelmäßig eine Sicherung exportieren – ohne Team-Passwort sind die Cloud-Daten nicht wiederherstellbar.' : 'Alle Daten liegen nur auf diesem Gerät.') + ' Der Export enthält Kader, Spieltage, Gegner-Datei, Messungen mit Testkatalog, eingefrorene Aufstellungen, Spielberichte und Spielbewertungen. Dateien aus Version 1.0 können weiterhin importiert werden.</div>' +
       '<button class="btn" id="exp">Exportieren (JSON-Datei speichern)</button>' + ((window.AndroidBridge && window.AndroidBridge.shareText) || navigator.share ? '<button class="btn sec" id="share">Teilen (z. B. per Messenger / Mail)</button>' : '') +
       '<button class="btn sec" id="expEnc">Verschlüsselt exportieren (mit Passwort)</button><button class="btn sec" id="imp">Importieren (JSON-Datei öffnen)</button><button class="btn sec" id="paste">Importieren aus eingefügtem Text</button></div>' +
-      '<div class="card"><h2>Präsentation</h2><div class="muted">Folien (16:9) für die Besprechung: Mannschaftsfassung ohne Werte oder Trainerfassung mit allen Zahlen – Vollbild, PDF oder HTML-Datei für Beamer/Tablet.</div><button class="btn" id="praesM">📽 Präsentation erstellen</button></div>' +
+      '<div class="card"><h2>Präsentation</h2><div class="muted">Folien (16:9) für die Besprechung: Mannschaftsfassung ohne Werte oder Trainerfassung mit allen Zahlen – Vollbild, PDF oder HTML-Datei für Beamer/Tablet.</div><button class="btn" id="praesM">📽 Präsentation erstellen</button><button class="btn sec" id="praesEltern">Elternbericht zu einem Spieltag</button></div>' +
       '<div class="card"><h2>Einstellungen</h2><button class="btn sec" id="gew">Gewichtung der Gesamtnote</button><button class="btn sec" id="zon">Positions-Zonen & Bonus Stamm/Alt</button><button class="btn sec" id="inf">So rechnet die App (Aufstellung, Form, Vorschläge)</button><button class="btn sec" id="ehemM">Ehemalige Spieler (' + M.ehemaligeSpieler(data).length + ')</button><button class="btn sec" id="gegM">Gegner-Datei (' + (data.gegner || []).length + ')</button></div>' +
       '<div class="card"><h2>Saison</h2><label class="f">Saisonbeginn (für Saison-Statistik, Altersklassen)</label>' + sel('saisonStart', data.settings.saisonStartMonat || 7, [[7, 'Juli'], [8, 'August'], [1, 'Januar']]) + '<div class="muted" style="margin-top:6px">Aktuelle Saison: ' + esc(M.saisonKey(M.today(), data.settings.saisonStartMonat)) + '. Spieltage werden nach Datum zugeordnet.</div></div>' +
       '<div class="card"><h2>Datenstand</h2><div class="kv"><div>Quelle</div><div>' + esc(data.quelle || '') + '</div><div>Zuletzt geändert</div><div>' + (data.geaendert ? new Date(data.geaendert).toLocaleString('de-DE') : 'unverändert') + '</div><div>Kinder</div><div>' + named().length + '</div>' +
@@ -1903,6 +1946,7 @@
     $('#imp').addEventListener('click', function () { if (window.AndroidBridge && window.AndroidBridge.openFile) window.AndroidBridge.openFile(); else $('#fileIn').click(); });
     $('#paste').addEventListener('click', function () { go('paste'); });
     $('#praesM').addEventListener('click', function () { go('praes'); });
+    $('#praesEltern').addEventListener('click', elternAuswahl);
     $('#gew').addEventListener('click', function () { go('gewichte'); });
     $('#zon').addEventListener('click', function () { go('zonen'); });
     $('#inf').addEventListener('click', function () { go('info'); });
@@ -2290,13 +2334,13 @@
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(T.svg(b, tkCtx(), { breite: B }));
     });
   }
-  function tkAusgeben(name, b64, mime, teilen) {
+  function tkAusgeben(name, b64, mime, teilen, titel) {
     var br = window.AndroidBridge;
     if (teilen && br && br.shareBase64) { br.shareBase64(name, b64, mime); return; }
     if (!teilen && br && br.saveBase64) { br.saveBase64(name, b64, mime); return; }
     var bin = atob(b64), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
     var blob = new Blob([u], { type: mime });
-    if (teilen && navigator.canShare) { try { var f = new File([blob], name, { type: mime }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: T.VEREIN + ' – Taktik' }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(name, blob); }); return; } } catch (e) { } }
+    if (teilen && navigator.canShare) { try { var f = new File([blob], name, { type: mime }); if (navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: titel || T.VEREIN + ' – Taktik' }).catch(function (e) { if (!e || e.name !== 'AbortError') webDownloadDirekt(name, blob); }); return; } } catch (e) { } }
     webDownload(name, blob); toast('„' + name + '“ gespeichert');
   }
   function tkExport(art) {
